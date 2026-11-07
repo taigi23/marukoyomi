@@ -281,6 +281,13 @@ input[type=date],input[type=time]{-webkit-appearance:none;appearance:none;min-wi
 .med>div:nth-child(2){min-width:0}
 .med .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
 .manage>div:first-child>div:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mkb{border:0;background:transparent;padding:6px;margin:-6px;line-height:0;cursor:pointer}
+.mkb .mk{display:block}
+.icslist{display:flex;flex-direction:column;max-height:280px;overflow-y:auto}
+.icsitem{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:10px;align-items:center;padding:9px 2px;border-top:1px solid var(--line);cursor:pointer}
+.icsitem input{width:20px;height:20px;margin:0;accent-color:var(--heart)}
+.linkbtn{border:0;background:transparent;color:var(--plum);font-size:13px;padding:4px}
+.btn:disabled{opacity:.45}
 /* 常にダーク表示 */
 :root,:root[data-theme="light"],:root[data-theme="dark"]{
   --bg:#15121A; --surface:#201B27; --line:#352E3F; --fg:#EFEBF4; --muted:#A79FB2;
@@ -472,7 +479,21 @@ function bbtChart(c){
   return '<div class="chart"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="今周期の基礎体温">'+g+'</svg></div>';
 }
 
-let editMedId=null, histScroll=null;
+let editMedId=null, histScroll=null, icsSel=null, formDraft={};
+function clearDraft(p){Object.keys(formDraft).forEach(k=>{if(k.startsWith(p))delete formDraft[k]})}
+function icsDays(c,t){return Object.keys(c.rec).filter(d=>d>=t).sort()}
+function icsLabel(c,d){if(c.map[d]==='ov')return'排卵予定日';if(c.map[add(d,2)]==='ov')return'排卵予定日の2日前';if(c.map[add(d,4)]==='ov')return'排卵予定日の4日前';return'タイミング推奨日'}
+function icsPanel(c,t){
+  const days=icsDays(c,t);
+  if(!days.length)return '<section class="panel"><h2>カレンダーに追加</h2><p class="muted small">追加できるタイミング推奨日がありません。</p></section>';
+  if(!icsSel)icsSel=new Set(days.slice(0,3));
+  const n=days.filter(d=>icsSel.has(d)).length, all=n===days.length;
+  const rows=days.map(d=>'<label class="icsitem"><input type="checkbox" data-icsd="'+d+'"'+(icsSel.has(d)?' checked':'')+'><span class="num">'+mdj(d)+'</span><span class="muted small">'+icsLabel(c,d)+'</span></label>').join('');
+  return '<section class="panel"><div class="section-head"><h2>カレンダーに追加</h2><button type="button" class="linkbtn" data-icsall="1">'+(all?'すべて解除':'すべて選択')+'</button></div>'
+   +'<p class="small muted">追加したい日を選んでください。予定名は「♡」になります。</p><div class="icslist">'+rows+'</div>'
+   +'<button type="button" class="btn primary" data-ics="1"'+(n?'':' disabled')+'>選んだ'+n+'日をカレンダーに追加</button>'
+   +'<p class="note">書き出したファイルを開くと、iPhoneの「カレンダー」に登録できます。</p></section>';
+}
 function medActive(m,day){return (!m.start||day>=m.start)&&(!m.end||day<=m.end)}
 function medState(m,day){
   if(!medActive(m,day))return{k:'off',txt:'服用期間外'};
@@ -482,7 +503,8 @@ function medState(m,day){
   return{k:'wait',txt:'予定'};
 }
 function fmtD(s){const p=parse(s);return p.getFullYear()+'/'+(p.getMonth()+1)+'/'+p.getDate()}
-function rangeText(m){return (m.start?fmtD(m.start):'開始日なし')+' 〜 '+(m.end?fmtD(m.end):'無期限')}
+function medDays(m){return m.days||(m.end&&m.start?diff(m.end,m.start)+1:0)}
+function rangeText(m){const n=medDays(m);return (m.start?fmtD(m.start)+'から':'')+(m.end?(n?n+'日間（'+fmtD(m.end)+'まで）':fmtD(m.end)+'まで'):'無期限')}
 function missedBanner(){
   const t=today();
   const missed=S.meds.filter(m=>medState(m,t).k==='missed');
@@ -509,7 +531,7 @@ function medEditForm(m){
    +'<div class="field"><label for="e-time">服用時刻</label><input id="e-time" type="time" value="'+esc(m.time)+'"></div>'
    +'<div class="field"><label for="e-count">錠数（1回）</label><input id="e-count" type="number" min="1" max="10" inputmode="numeric" value="'+(m.count||1)+'"></div>'
    +'<div class="field"><label for="e-start">服用開始日</label><input id="e-start" type="date" value="'+(m.start||'')+'"></div>'
-   +'<div class="field"><label for="e-end">服用終了日（空欄で無期限）</label><input id="e-end" type="date" value="'+(m.end||'')+'"></div>'
+   +'<div class="field"><label for="e-days">服用期間（日数・空欄で無期限）</label><input id="e-days" type="number" min="1" max="365" inputmode="numeric" placeholder="例：14" value="'+(medDays(m)||'')+'"></div>'
    +'</div><div class="mbtns" style="justify-content:flex-end;margin-top:10px"><button type="button" data-mcancel="1">キャンセル</button><button type="button" class="primary-s" data-msave="'+m.id+'">保存</button></div></div>';
 }
 function readMedForm(p){
@@ -517,29 +539,33 @@ function readMedForm(p){
   const time=document.getElementById(p+'time').value;
   const count=Math.round(Number(document.getElementById(p+'count').value));
   const start=document.getElementById(p+'start').value||'';
-  const end=document.getElementById(p+'end').value||'';
+  const dRaw=String(document.getElementById(p+'days').value||'').trim();
+  const days=dRaw?Math.round(Number(dRaw)):0;
   if(!name||!time){toast('名前と時刻を入力してください');return null}
   if(!(count>=1&&count<=10)){toast('錠数は1〜10で入力してください');return null}
-  if(start&&end&&end<start){toast('終了日は開始日より後にしてください');return null}
-  return{name,time,count,start:start||undefined,end:end||undefined};
+  if(dRaw&&!(days>=1&&days<=365)){toast('服用期間は1〜365日で入力してください');return null}
+  const base=start||today();
+  const end=days?add(base,days-1):'';
+  return{name,time,count,start:start||(days?base:undefined),end:end||undefined,days:days||undefined};
 }
 function saveMed(id){
   const m=S.meds.find(x=>x.id===id);if(!m)return;
   const v=readMedForm('e-');if(!v)return;
-  Object.assign(m,v);editMedId=null;commit('お薬を保存しました');
+  Object.assign(m,v);editMedId=null;clearDraft('e-');commit('お薬を保存しました');
 }
 function exportIcs(){
   const t=today();
-  const days=Object.keys(calc().rec).filter(d=>d>=t).sort();
-  if(!days.length){toast('追加できる推奨日がありません');return}
+  const c=calc();
+  const days=icsDays(c,t).filter(d=>icsSel&&icsSel.has(d));
+  if(!days.length){toast('追加する日を選んでください');return}
   const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+Z$/,'Z');
   const ev=[];
-  days.forEach(d=>{const c=d.replace(/-/g,'');ev.push('BEGIN:VEVENT','UID:rec-'+c+'@marukoyomi','DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+c,'DTEND;VALUE=DATE:'+add(d,1).replace(/-/g,''),'SUMMARY:タイミング推奨日','DESCRIPTION:まるこよみで計算した推定日です。','END:VEVENT')});
+  days.forEach(d=>{const k=d.replace(/-/g,'');ev.push('BEGIN:VEVENT','UID:rec-'+k+'@marukoyomi','DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+k,'DTEND;VALUE=DATE:'+add(d,1).replace(/-/g,''),'SUMMARY:♡','DESCRIPTION:'+icsLabel(c,d)+'（まるこよみの推定）','END:VEVENT')});
   const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//marukoyomi//JA','CALSCALE:GREGORIAN'].concat(ev,['END:VCALENDAR']).join('\r\n');
   const url=URL.createObjectURL(new Blob([ics],{type:'text/calendar;charset=utf-8'}));
   const a=document.createElement('a');a.href=url;a.download='marukoyomi-timing.ics';document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),4000);
-  toast(days.length+'件の推奨日を書き出しました');
+  toast(days.length+'件の♡を書き出しました');
 }
 
 function weekStrip(c){
@@ -611,7 +637,6 @@ function viewCal(){
   const tail=(7-(first.getDay()+dim)%7)%7;for(let i=0;i<tail;i++)g+='<div class="day out" aria-hidden="true"></div>';
   let h='<section class="panel"><div class="cal-head"><button type="button" data-mv="-1" aria-label="前の月">‹</button><h2 class="num">'+Y+'年'+(M+1)+'月</h2><button type="button" data-mv="1" aria-label="次の月">›</button></div><div class="grid7">'+g+'</div>'
    +iconLegend()+'<div class="legend"><span><i class="sw" style="background:var(--good);border-radius:50%"></i><i class="sw" style="background:var(--neutral);border-radius:50%"></i><i class="sw" style="background:var(--bad);border-radius:50%"></i>気分（右上の点）</span></div></section>';
-  h+='<div class="icsrow"><button type="button" class="btn" data-ics="1">タイミング推奨日をカレンダーに追加</button><p class="note">書き出したファイルを開くと、iPhoneの「カレンダー」に登録できます。</p></div>';
   // detail
   const fut=sel>t;
   let tag='';
@@ -627,6 +652,7 @@ function viewCal(){
      +moodCond(sel);
   }
   h+='</section>';
+  h+=icsPanel(c,t);
   return h;
 }
 
@@ -747,14 +773,14 @@ function viewMeds(){
     const endDay=latestEnd>t?latestEnd:t;
     const days=[];for(let d=startDay;d<=endDay;d=add(d,1))days.push(d);
     let tb='<table><thead><tr><th></th>'+days.map(d=>'<th class="'+(d===t?'tcol':'')+'">'+mds(d)+'</th>').join('')+'</tr></thead><tbody>';
-    S.meds.forEach(m=>{tb+='<tr><td>'+esc(m.name)+'</td>'+days.map(d=>{const s=medState(m,d);const inner=s.k==='off'?'<span class="muted">–</span>':'<i class="mk '+(s.k==='taken'?'ok':s.k==='missed'?'ng':'')+'" title="'+s.txt+'"></i>';return '<td class="'+(d===t?'tcol':'')+'">'+inner+'</td>'}).join('')+'</tr>'});
+    S.meds.forEach(m=>{tb+='<tr><td>'+esc(m.name)+'</td>'+days.map(d=>{const s=medState(m,d);const mk='<i class="mk '+(s.k==='taken'?'ok':s.k==='missed'?'ng':'')+'"></i>';const inner=s.k==='off'?'<span class="muted">–</span>':d<=t?'<button type="button" class="mkb" data-mlog="'+m.id+'|'+d+'" aria-label="'+esc(m.name)+' '+mdj(d)+' '+s.txt+'">'+mk+'</button>':mk;return '<td class="'+(d===t?'tcol':'')+'">'+inner+'</td>'}).join('')+'</tr>'});
     tb+='</tbody></table>';
     const past=days.filter(d=>d<=t);
     const ok=past.reduce((a,d)=>a+S.meds.filter(m=>medState(m,d).k==='taken').length,0);
     const total=past.reduce((a,d)=>a+S.meds.filter(m=>medActive(m,d)).length,0);
     h+='<section class="panel"><div class="section-head"><h2>服用履歴</h2><span class="small muted num">'+fmtD(startDay)+' 〜 '+fmtD(endDay)+'</span></div>'
      +'<div class="small muted num">今日までの服用 '+ok+' / '+total+'</div><div class="hist" id="hist">'+tb+'</div>'
-     +'<div class="legend" style="justify-content:flex-start"><span><i class="mk ok" style="width:10px;height:10px"></i>服用</span><span><i class="mk ng" style="width:10px;height:10px"></i>飲み忘れ</span><span><i class="mk" style="width:10px;height:10px"></i>予定</span><span class="muted">–　期間外</span></div><p class="note">横にスクロールすると、登録した全期間を見られます。</p></section>';
+     +'<div class="legend" style="justify-content:flex-start"><span><i class="mk ok" style="width:10px;height:10px"></i>服用</span><span><i class="mk ng" style="width:10px;height:10px"></i>飲み忘れ</span><span><i class="mk" style="width:10px;height:10px"></i>予定</span><span class="muted">–　期間外</span></div><p class="note">横にスクロールすると、登録した全期間を見られます。今日までのマスをタップすると、飲んだ・飲んでいないを切り替えられます。</p></section>';
   }
   h+='<section class="panel"><div class="section-head"><h2>お薬の登録</h2><span class="small muted">'+S.meds.length+'件</span></div>'
    +(S.meds.length?S.meds.map((m,i)=>editMedId===m.id?medEditForm(m):medManageRow(m,i)).join(''):'<p class="muted small">まだ登録がありません。</p>')
@@ -763,7 +789,7 @@ function viewMeds(){
    +'<div class="field"><label for="a-time">服用時刻</label><input id="a-time" type="time" value="08:00"></div>'
    +'<div class="field"><label for="a-count">錠数（1回）</label><input id="a-count" type="number" min="1" max="10" inputmode="numeric" value="1"></div>'
    +'<div class="field"><label for="a-start">服用開始日</label><input id="a-start" type="date" value="'+t+'"></div>'
-   +'<div class="field"><label for="a-end">服用終了日（空欄で無期限）</label><input id="a-end" type="date"></div>'
+   +'<div class="field"><label for="a-days">服用期間（日数・空欄で無期限）</label><input id="a-days" type="number" min="1" max="365" inputmode="numeric" placeholder="例：14"></div>'
    +'</div><button type="submit" class="btn primary">追加する</button></form>'
    +'<p class="note">お薬の量や時間は、医師・薬剤師の指示を優先してください。</p></section>';
   return h;
@@ -793,6 +819,7 @@ function render(){
   if(tab!=='meds')histScroll=null;
   v.innerHTML=tab==='today'?viewToday():tab==='cal'?viewCal():tab==='chart'?viewChart():tab==='meds'?viewMeds():viewPrefs();
   if(tab!=='meds')v.insertAdjacentHTML('afterbegin',missedBanner());
+  Object.keys(formDraft).forEach(id=>{const el=document.getElementById(id);if(el&&'value' in el)el.value=formDraft[id]});
   const hs=document.getElementById('hist');
   if(hs){if(histScroll!=null)hs.scrollLeft=histScroll;else{const tc=hs.querySelector('.tcol');if(tc)hs.scrollLeft=Math.max(0,tc.offsetLeft-hs.clientWidth/2)}
     hs.addEventListener('scroll',()=>{histScroll=hs.scrollLeft},{passive:true})}
@@ -815,14 +842,16 @@ document.addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   const t=today();
   if(b.dataset.ics!==undefined){exportIcs();return}
+  if(b.dataset.icsall){const days=icsDays(calc(),today());const all=days.every(d=>icsSel&&icsSel.has(d));icsSel=new Set(all?[]:days);render();return}
   if(b.dataset.tab){tab=b.dataset.tab;chartScroll=null;armed=false;if(tab==='cal')sel=sel||t;render();window.scrollTo(0,0);return}
   if(b.dataset.go){tab=b.dataset.go;render();window.scrollTo(0,0);return}
   if(b.id==='clearSample'){S=blank();sel=t;commit('サンプルを消去しました');return}
   if(b.dataset.med){const id=b.dataset.med;S.medLog[t]=S.medLog[t]||{};if(S.medLog[t][id]){delete S.medLog[t][id];commit('取り消しました')}else{S.medLog[t][id]=nowHM();commit('服用を記録しました')}return}
+  if(b.dataset.mlog){const [id,d]=b.dataset.mlog.split('|');const m=S.meds.find(x=>x.id===id);if(!m)return;S.medLog[d]=S.medLog[d]||{};if(S.medLog[d][id]){delete S.medLog[d][id];commit(mdj(d)+'：未服用にしました')}else{S.medLog[d][id]=d===today()?nowHM():m.time;commit(mdj(d)+'：飲んだに変更しました')}return}
   if(b.dataset.mup){const i=S.meds.findIndex(m=>m.id===b.dataset.mup);if(i>0){[S.meds[i-1],S.meds[i]]=[S.meds[i],S.meds[i-1]];commit()}return}
   if(b.dataset.mdown){const i=S.meds.findIndex(m=>m.id===b.dataset.mdown);if(i>=0&&i<S.meds.length-1){[S.meds[i+1],S.meds[i]]=[S.meds[i],S.meds[i+1]];commit()}return}
-  if(b.dataset.medit){editMedId=b.dataset.medit;render();return}
-  if(b.dataset.mcancel!==undefined){editMedId=null;render();return}
+  if(b.dataset.medit){editMedId=b.dataset.medit;clearDraft('e-');render();return}
+  if(b.dataset.mcancel!==undefined){editMedId=null;clearDraft('e-');render();return}
   if(b.dataset.msave){saveMed(b.dataset.msave);return}
   if(b.dataset.mood){const d=b.dataset.mday;if(S.mood[d]===b.dataset.mood)delete S.mood[d];else S.mood[d]=b.dataset.mood;commit();return}
   if(b.dataset.cond){const d=b.dataset.cday,k=b.dataset.cond,l=S.cond[d]||[];S.cond[d]=l.includes(k)?l.filter(x=>x!==k):l.concat(k);if(!S.cond[d].length)delete S.cond[d];commit();return}
@@ -847,10 +876,16 @@ document.addEventListener('submit',e=>{
   if(e.target.id!=='addMed')return;e.preventDefault();
   const v=readMedForm('a-');if(!v)return;
   if(!v.start)v.start=today();
+  clearDraft('a-');
   S.meds.push(Object.assign({id:'m'+Date.now().toString(36)},v));
   commit('「'+v.name+'」を追加しました');
 });
+const keepDraft=e=>{const el=e.target;if(el&&el.id&&/^[ae]-/.test(el.id))formDraft[el.id]=el.value};
+document.addEventListener('input',keepDraft);
 document.addEventListener('change',e=>{
+  keepDraft(e);
+  if(e.target.dataset&&e.target.dataset.icsd){const d=e.target.dataset.icsd;if(!icsSel)icsSel=new Set();if(e.target.checked)icsSel.add(d);else icsSel.delete(d);render();return}
+
   const map={sCycle:['cycle',18,50],sPeriod:['period',2,10],sLuteal:['luteal',10,16]};
   const m=map[e.target.id];if(!m)return;
   const v=Math.round(Number(e.target.value));
