@@ -4,10 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="まるこよみ">
-<meta name="theme-color" content="#F5F4F9">
+<meta name="theme-color" content="#15121A">
 <style>
-:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root{color-scheme:dark;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{background:#15121A}
 body{margin:0;font-size:14px}
 img{max-width:100%}
 [hidden]{display:none!important}
@@ -214,7 +216,7 @@ input[type=number],input[type=text],input[type=time]{font:inherit;color:var(--fg
 .gc:has(.gm){justify-content:flex-start}
 .gdate-l,.gdc{height:30px;border-bottom:1px solid var(--line)}
 .gd{border:0;background:transparent;padding:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:visible;font-variant-numeric:tabular-nums}
-.gd b{font-size:clamp(5px,calc(var(--cw) * 1.2),12px);line-height:1;position:relative;z-index:1}
+.gd b{font-size:clamp(4px,calc(var(--cw) * .9),12px);letter-spacing:-.04em;line-height:1;position:relative;z-index:1}
 .gd b.vt{writing-mode:vertical-rl;text-orientation:upright;letter-spacing:-.08em}
 .gd small{font-size:8px;color:var(--muted);line-height:1.1}
 .gc .ic{width:clamp(6px,calc(var(--cw) + 2px),14px);height:clamp(6px,calc(var(--cw) + 2px),14px)}
@@ -248,12 +250,49 @@ input[type=number],input[type=text],input[type=time]{font:inherit;color:var(--fg
 .gbbt svg{display:block}
 /* nav */
 .nav{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--line);padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px));padding-bottom:env(safe-area-inset-bottom,0px)}
-.nav-in{max-width:520px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
+.nav-in{max-width:520px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
 .nav button{border:0;background:transparent;padding:8px 0 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted)}
 .nav button[aria-current="page"]{color:var(--plum);font-weight:700}
 .nav svg{width:24px;height:24px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:13px;z-index:30;max-width:calc(100% - 32px);transition:opacity .2s}
 @media (prefers-reduced-motion: reduce){.toast{transition:none}}
+.manage{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.mbtns{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.mbtns button{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:6px 8px;font-size:12px;min-width:34px}
+.mbtns button.del{color:var(--bad);border-color:var(--bad)}
+.mbtns button:disabled{opacity:.35}
+.mbtns .primary-s{background:var(--period);border-color:var(--period);color:var(--on-color)}
+.med.off{opacity:.55}
+.medform{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);margin-top:8px;padding-top:12px}
+.mededit{border-top:1px solid var(--line);padding:10px 0}
+.formgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.formgrid .full{grid-column:1 / -1}
+.formgrid input{min-width:0;width:100%}
+input[type=date],input[type=time]{-webkit-appearance:none;appearance:none;min-width:0;max-width:100%}
+.icsrow{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.icsrow .btn{width:100%}
+.icsrow .note{margin:0}
+.hist{position:relative}
+.hist th,.hist td{min-width:34px}
+.hist th:first-child,.hist td:first-child{position:sticky;left:0;background:var(--surface);z-index:1;min-width:0;max-width:96px;box-shadow:1px 0 0 var(--line)}
+.hist th.tcol,.hist td.tcol{background:var(--plum-soft)}
+.hist th.tcol{color:var(--plum);font-weight:700}
+.hist th:first-child,.hist td:first-child{white-space:nowrap;max-width:none;overflow-wrap:normal;padding-right:10px}
+.med>div:nth-child(2){min-width:0}
+.med .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+.manage>div:first-child>div:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 常にダーク表示 */
+:root,:root[data-theme="light"],:root[data-theme="dark"]{
+  --bg:#15121A; --surface:#201B27; --line:#352E3F; --fg:#EFEBF4; --muted:#A79FB2;
+  --plum:#BDA0DE; --plum-soft:#2F2540;
+  --rose:#F07087; --rose-soft:#46222C;
+  --teal:#52C3B4; --teal-soft:#153833;
+  --amber:#E9A746; --amber-soft:#3A2B12;
+  --grid:#2A2432; --wk:#1C1823; --sat:#7EAEE6; --hl:#4A2238; --heart:#F48BB0;
+  --good:#62C985; --good-soft:#173322; --neutral:#ABA3B6; --neutral-soft:#2B2633; --bad:#F26D9E; --bad-soft:#44172A;
+  --period:#7FA3F5; --period-soft:#1C2944; --fert:#F2C94C; --fert-soft:#3A3010; --ovu:#FF9A4A; --ovu-soft:#40260F;
+  --on-color:#15121A; color-scheme:dark;
+}
 </style>
 
 </head>
@@ -275,8 +314,7 @@ input[type=number],input[type=text],input[type=time]{font:inherit;color:var(--fg
 
 <nav class="nav" aria-label="メニュー">
   <div class="nav-in">
-    <button type="button" data-tab="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="4" r="2" fill="currentColor"/></svg>今日</button>
-    <button type="button" data-tab="cal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>カレンダー</button>
+        <button type="button" data-tab="cal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>カレンダー</button>
     <button type="button" data-tab="chart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3.5 4v16h17"/><path d="M6.5 15l4-5 3.5 3 5-6.5"/></svg>グラフ</button>
     <button type="button" data-tab="meds"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="8.5" width="18" height="7" rx="3.5" transform="rotate(-35 12 12)"/><path d="M9.3 8.2l5.4 7.6"/></svg>お薬</button>
     <button type="button" data-tab="prefs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>設定</button>
@@ -301,12 +339,12 @@ const mdj=s=>{const d=parse(s);return (d.getMonth()+1)+'月'+d.getDate()+'日（
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 function sample(){
-  const t=today(), d=blank(); d.sample=true; d.sampleVer=4;
+  const t=today(), d=blank(); d.sample=true; d.sampleVer=5;
   let seed=20261107; const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647};
   const pick=a=>a[Math.floor(rnd()*a.length)];
   const cyc=[{s:-69,len:5,ov:-55,next:-41},{s:-41,len:6,ov:-26,next:-12},{s:-12,len:5,ov:3,next:17}];
   cyc.forEach(c=>{for(let i=0;i<c.len;i++)if(c.s+i<=0)d.period[add(t,c.s+i)]=true});
-  d.meds=[{id:'m1',name:'葉酸サプリ',time:'08:00'},{id:'m2',name:'処方薬（例）',time:'21:00'}];
+  d.meds=[{id:'m1',name:'葉酸サプリ',time:'08:00',start:add(t,-70),count:2},{id:'m2',name:'処方薬（例）',time:'21:00',start:add(t,-70),end:add(t,30),count:1}];
   for(let o=-69;o<=0;o++){
     const day=add(t,o), c=cyc.filter(x=>x.s<=o).pop();
     const inPeriod=o<c.s+c.len, high=o>c.ov, pms=c.next-o<=4, fert=o>=c.ov-5&&o<=c.ov+1;
@@ -336,7 +374,7 @@ function load(){try{const r=localStorage.getItem(KEY);if(r){const d=JSON.parse(r
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 
 let S=load()||sample();
-if(S.sample&&S.sampleVer!==4)S=sample();
+if(S.sample&&S.sampleVer!==5)S=sample();
 S.mood=S.mood||{}; S.cond=S.cond||{};
 const MOODS=[['happy','幸せ','good'],['fun','楽しい','good'],['irritated','イライラ','bad'],['lonely','寂しい','bad'],['normal','普通','neutral']];
 const CONDS=[['discharge','おりもの','good'],['poop','うんち','good'],['cramp','腹痛','bad'],['sleepy','眠気','bad'],['headache','頭痛','bad'],['backache','腰痛','bad'],['skin','肌荒れ','bad'],['appetite','食欲','neutral']];
@@ -349,7 +387,7 @@ function moodCond(day){
    +CONDS.map(([k,l,g])=>'<button type="button" class="chip '+g+'" data-cond="'+k+'" data-cday="'+day+'" aria-pressed="'+cs.includes(k)+'">'+l+'</button>').join('')+'</div></div>'
    +'<div class="cat-legend"><span><i style="background:var(--good)"></i>良い</span><span><i style="background:var(--neutral)"></i>普通</span><span><i style="background:var(--bad)"></i>悪い</span></div>';
 }
-let tab='today', sel=today(), vm=null, armed=false;
+let tab='cal', sel=today(), vm=null, armed=false;
 
 function calc(){
   const t=today(), st=S.settings;
@@ -434,17 +472,74 @@ function bbtChart(c){
   return '<div class="chart"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="今周期の基礎体温">'+g+'</svg></div>';
 }
 
+let editMedId=null, histScroll=null;
+function medActive(m,day){return (!m.start||day>=m.start)&&(!m.end||day<=m.end)}
 function medState(m,day){
+  if(!medActive(m,day))return{k:'off',txt:'服用期間外'};
   const log=(S.medLog[day]||{})[m.id];
   if(log)return{k:'taken',txt:log+' 服用'};
   if(day<today()||(day===today()&&nowHM()>=m.time))return{k:'missed',txt:'飲み忘れ'};
   return{k:'wait',txt:'予定'};
 }
-function medRows(full){
+function fmtD(s){const p=parse(s);return p.getFullYear()+'/'+(p.getMonth()+1)+'/'+p.getDate()}
+function rangeText(m){return (m.start?fmtD(m.start):'開始日なし')+' 〜 '+(m.end?fmtD(m.end):'無期限')}
+function missedBanner(){
+  const t=today();
+  const missed=S.meds.filter(m=>medState(m,t).k==='missed');
+  if(!missed.length)return'';
+  return '<div class="banner warn"><span>飲み忘れ：'+missed.map(m=>esc(m.name)+'（'+m.time+'）').join('、')+'</span><button type="button" data-go="meds">確認する</button></div>';
+}
+function medRows(){
   const t=today();
   if(!S.meds.length)return'<p class="muted small">お薬が登録されていません。「お薬」タブから追加できます。</p>';
-  return S.meds.slice().sort((a,b)=>a.time<b.time?-1:1).map(m=>{const s=medState(m,t);
-    return '<div class="med"><div class="t">'+esc(m.time)+'</div><div><div class="n">'+esc(m.name)+'</div><span class="pill '+s.k+'">'+s.txt+'</span></div><button type="button" class="check '+(s.k==='taken'?'done':s.k==='missed'?'missed':'')+'" data-med="'+m.id+'" aria-label="'+esc(m.name)+'を'+(s.k==='taken'?'未服用に戻す':'飲んだ')+'">'+(s.k==='taken'?'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>':'<span class="small">飲んだ</span>')+'</button></div>'}).join('');
+  return S.meds.map(m=>{
+    const s=medState(m,t);
+    if(s.k==='off')return '<div class="med off"><div class="t">'+esc(m.time)+'</div><div><div class="n">'+esc(m.name)+'</div><span class="pill wait">服用期間外</span></div><span></span></div>';
+    return '<div class="med"><div class="t">'+esc(m.time)+'</div><div><div class="n">'+esc(m.name)+' <span class="muted small">'+(m.count||1)+'錠</span></div><span class="pill '+s.k+'">'+s.txt+'</span></div><button type="button" class="check '+(s.k==='taken'?'done':s.k==='missed'?'missed':'')+'" data-med="'+m.id+'" aria-label="'+esc(m.name)+'を'+(s.k==='taken'?'未服用に戻す':'飲んだ')+'">'+(s.k==='taken'?'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>':'<span class="small">飲んだ</span>')+'</button></div>';
+  }).join('');
+}
+function medManageRow(m,i){
+  const last=S.meds.length-1;
+  return '<div class="manage"><div style="min-width:0"><div><span class="num" style="font-weight:700">'+esc(m.time)+'</span>　<span class="n">'+esc(m.name)+'</span></div><div class="muted small">'+(m.count||1)+'錠 ・ '+rangeText(m)+'</div></div>'
+   +'<div class="mbtns"><button type="button" data-mup="'+m.id+'" aria-label="上へ"'+(i===0?' disabled':'')+'>↑</button><button type="button" data-mdown="'+m.id+'" aria-label="下へ"'+(i===last?' disabled':'')+'>↓</button><button type="button" data-medit="'+m.id+'">編集</button><button type="button" class="del" data-del="'+m.id+'">削除</button></div></div>';
+}
+function medEditForm(m){
+  return '<div class="mededit"><div class="formgrid">'
+   +'<div class="field full"><label for="e-name">名前</label><input id="e-name" type="text" maxlength="40" value="'+esc(m.name)+'"></div>'
+   +'<div class="field"><label for="e-time">服用時刻</label><input id="e-time" type="time" value="'+esc(m.time)+'"></div>'
+   +'<div class="field"><label for="e-count">錠数（1回）</label><input id="e-count" type="number" min="1" max="10" inputmode="numeric" value="'+(m.count||1)+'"></div>'
+   +'<div class="field"><label for="e-start">服用開始日</label><input id="e-start" type="date" value="'+(m.start||'')+'"></div>'
+   +'<div class="field"><label for="e-end">服用終了日（空欄で無期限）</label><input id="e-end" type="date" value="'+(m.end||'')+'"></div>'
+   +'</div><div class="mbtns" style="justify-content:flex-end;margin-top:10px"><button type="button" data-mcancel="1">キャンセル</button><button type="button" class="primary-s" data-msave="'+m.id+'">保存</button></div></div>';
+}
+function readMedForm(p){
+  const name=document.getElementById(p+'name').value.trim();
+  const time=document.getElementById(p+'time').value;
+  const count=Math.round(Number(document.getElementById(p+'count').value));
+  const start=document.getElementById(p+'start').value||'';
+  const end=document.getElementById(p+'end').value||'';
+  if(!name||!time){toast('名前と時刻を入力してください');return null}
+  if(!(count>=1&&count<=10)){toast('錠数は1〜10で入力してください');return null}
+  if(start&&end&&end<start){toast('終了日は開始日より後にしてください');return null}
+  return{name,time,count,start:start||undefined,end:end||undefined};
+}
+function saveMed(id){
+  const m=S.meds.find(x=>x.id===id);if(!m)return;
+  const v=readMedForm('e-');if(!v)return;
+  Object.assign(m,v);editMedId=null;commit('お薬を保存しました');
+}
+function exportIcs(){
+  const t=today();
+  const days=Object.keys(calc().rec).filter(d=>d>=t).sort();
+  if(!days.length){toast('追加できる推奨日がありません');return}
+  const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+Z$/,'Z');
+  const ev=[];
+  days.forEach(d=>{const c=d.replace(/-/g,'');ev.push('BEGIN:VEVENT','UID:rec-'+c+'@marukoyomi','DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+c,'DTEND;VALUE=DATE:'+add(d,1).replace(/-/g,''),'SUMMARY:タイミング推奨日','DESCRIPTION:まるこよみで計算した推定日です。','END:VEVENT')});
+  const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//marukoyomi//JA','CALSCALE:GREGORIAN'].concat(ev,['END:VCALENDAR']).join('\r\n');
+  const url=URL.createObjectURL(new Blob([ics],{type:'text/calendar;charset=utf-8'}));
+  const a=document.createElement('a');a.href=url;a.download='marukoyomi-timing.ics';document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  toast(days.length+'件の推奨日を書き出しました');
 }
 
 function weekStrip(c){
@@ -516,6 +611,7 @@ function viewCal(){
   const tail=(7-(first.getDay()+dim)%7)%7;for(let i=0;i<tail;i++)g+='<div class="day out" aria-hidden="true"></div>';
   let h='<section class="panel"><div class="cal-head"><button type="button" data-mv="-1" aria-label="前の月">‹</button><h2 class="num">'+Y+'年'+(M+1)+'月</h2><button type="button" data-mv="1" aria-label="次の月">›</button></div><div class="grid7">'+g+'</div>'
    +iconLegend()+'<div class="legend"><span><i class="sw" style="background:var(--good);border-radius:50%"></i><i class="sw" style="background:var(--neutral);border-radius:50%"></i><i class="sw" style="background:var(--bad);border-radius:50%"></i>気分（右上の点）</span></div></section>';
+  h+='<div class="icsrow"><button type="button" class="btn" data-ics="1">タイミング推奨日をカレンダーに追加</button><p class="note">書き出したファイルを開くと、iPhoneの「カレンダー」に登録できます。</p></div>';
   // detail
   const fut=sel>t;
   let tag='';
@@ -569,7 +665,7 @@ function viewChart(){
   row('',(d,i)=>{const p=parse(d);return (i===0||p.getDate()===1)?'<span class="gm">'+(p.getMonth()+1)+'月</span>':''},'ghead');
   h+='<div class="gl gdate-l"></div>';
   days.forEach(d=>{const p=parse(d),w=p.getDay(),n=p.getDate();
-    h+=cell(d,'<button type="button" class="gd'+(w===0?' sun':w===6?' sat':'')+(d===t?' now':'')+'" data-goday="'+d+'" aria-label="'+mdj(d)+'">'+(wide?'<b>'+n+'</b><small>'+WD[w]+'</small>':'<b class="vt">'+n+'</b>')+'</button>',' gdc')});
+    h+=cell(d,'<button type="button" class="gd'+(w===0?' sun':w===6?' sat':'')+(d===t?' now':'')+'" data-goday="'+d+'" aria-label="'+mdj(d)+'">'+(wide?'<b>'+n+'</b><small>'+WD[w]+'</small>':'<b>'+n+'</b>')+'</button>',' gdc')});
   group('周期');
   row('生理',bar(d=>S.period[d],'b-period'));
   row('生理予定',bar(d=>c.map[d]==='pred','b-pred'));
@@ -591,7 +687,7 @@ function viewChart(){
   let ax='<svg width="'+LW+'" height="'+H+'" viewBox="0 0 '+LW+' '+H+'" aria-hidden="true"><text x="4" y="10" font-size="9" fill="var(--muted)">℃</text>';
   let g='';
   days.forEach((d,i)=>{const w=parse(d).getDay();let f=null;
-    if(c.rec[d])f='var(--hl)';else if(S.period[d])f='var(--period-soft)';else if(c.map[d]==='fertile'||c.map[d]==='ov')f='var(--fert-soft)';else if(w===0||w===6)f='var(--wk)';
+    if(S.period[d])f='var(--period-soft)';else if(c.map[d]==='fertile'||c.map[d]==='ov')f='var(--fert-soft)';else if(w===0||w===6)f='var(--wk)';
     if(f)g+='<rect x="'+(i*CW).toFixed(2)+'" y="0" width="'+(CW+.3).toFixed(2)+'" height="'+H+'" fill="'+f+'"/>';
     if(w===0||parse(d).getDate()===1)g+='<line x1="'+(i*CW).toFixed(2)+'" x2="'+(i*CW).toFixed(2)+'" y1="0" y2="'+H+'" stroke="var(--line)"'+ns+'/>'});
   for(let v=Math.ceil(lo*4)/4;v<=hi+1e-9;v+=.25){const yy=y(v).toFixed(1),major=Math.abs(v*2-Math.round(v*2))<1e-6;
@@ -642,19 +738,33 @@ function bindChart(gs){
 function viewMeds(){
   const t=today();
   let h='<section class="panel"><div class="section-head"><h2>今日のお薬</h2><span class="small muted num">'+mds(t)+' '+nowHM()+'</span></div>'+medRows()+'</section>';
-  h+='<p class="hint">この試作版では、ページを開いている間に飲み忘れを表示します。決まった時刻のプッシュ通知はiPhoneアプリ版で対応できます。</p>';
-  // history
+  h+='<p class="hint">飲み忘れは、このページを開いている間だけ知らせます。決まった時刻のプッシュ通知はiPhoneアプリ版で対応できます。</p>';
   if(S.meds.length){
-    const days=[];for(let i=6;i>=0;i--)days.push(add(t,-i));
-    let tb='<table><thead><tr><th></th>'+days.map(d=>'<th>'+mds(d)+'</th>').join('')+'</tr></thead><tbody>';
-    S.meds.forEach(m=>{tb+='<tr><td>'+esc(m.name)+'</td>'+days.map(d=>{const s=medState(m,d);const k=s.k==='taken'?'ok':s.k==='missed'?'ng':'';return '<td><i class="mk '+k+'" title="'+s.txt+'"></i></td>'}).join('')+'</tr>'});
+    const earliest=S.meds.reduce((a,m)=>m.start&&m.start<a?m.start:a,t);
+    const latestEnd=S.meds.reduce((a,m)=>m.end&&m.end>a?m.end:a,t);
+    const cap=add(t,-365);
+    const startDay=earliest<cap?cap:earliest;
+    const endDay=latestEnd>t?latestEnd:t;
+    const days=[];for(let d=startDay;d<=endDay;d=add(d,1))days.push(d);
+    let tb='<table><thead><tr><th></th>'+days.map(d=>'<th class="'+(d===t?'tcol':'')+'">'+mds(d)+'</th>').join('')+'</tr></thead><tbody>';
+    S.meds.forEach(m=>{tb+='<tr><td>'+esc(m.name)+'</td>'+days.map(d=>{const s=medState(m,d);const inner=s.k==='off'?'<span class="muted">–</span>':'<i class="mk '+(s.k==='taken'?'ok':s.k==='missed'?'ng':'')+'" title="'+s.txt+'"></i>';return '<td class="'+(d===t?'tcol':'')+'">'+inner+'</td>'}).join('')+'</tr>'});
     tb+='</tbody></table>';
-    const total=S.meds.length*7, ok=days.reduce((a,d)=>a+S.meds.filter(m=>(S.medLog[d]||{})[m.id]).length,0);
-    h+='<section class="panel"><div class="section-head"><h2>直近7日</h2><span class="small muted num">服用 '+ok+' / '+total+'</span></div><div class="hist">'+tb+'</div><div class="legend" style="justify-content:flex-start"><span><i class="mk ok" style="width:10px;height:10px"></i>服用</span><span><i class="mk ng" style="width:10px;height:10px"></i>飲み忘れ</span><span><i class="mk" style="width:10px;height:10px"></i>予定</span></div></section>';
+    const past=days.filter(d=>d<=t);
+    const ok=past.reduce((a,d)=>a+S.meds.filter(m=>medState(m,d).k==='taken').length,0);
+    const total=past.reduce((a,d)=>a+S.meds.filter(m=>medActive(m,d)).length,0);
+    h+='<section class="panel"><div class="section-head"><h2>服用履歴</h2><span class="small muted num">'+fmtD(startDay)+' 〜 '+fmtD(endDay)+'</span></div>'
+     +'<div class="small muted num">今日までの服用 '+ok+' / '+total+'</div><div class="hist" id="hist">'+tb+'</div>'
+     +'<div class="legend" style="justify-content:flex-start"><span><i class="mk ok" style="width:10px;height:10px"></i>服用</span><span><i class="mk ng" style="width:10px;height:10px"></i>飲み忘れ</span><span><i class="mk" style="width:10px;height:10px"></i>予定</span><span class="muted">–　期間外</span></div><p class="note">横にスクロールすると、登録した全期間を見られます。</p></section>';
   }
-  h+='<section class="panel"><h2>お薬の登録</h2>'
-   +S.meds.map(m=>'<div class="manage"><span><span class="num" style="font-weight:700">'+esc(m.time)+'</span>　'+esc(m.name)+'</span><button type="button" data-del="'+m.id+'">削除</button></div>').join('')
-   +'<form id="addMed" class="field" style="gap:8px"><label for="medName">新しく追加</label><div class="add-row"><input id="medName" type="text" placeholder="例：葉酸サプリ" maxlength="40" required><input id="medTime" type="time" value="08:00" required></div><button type="submit" class="btn primary">追加する</button></form>'
+  h+='<section class="panel"><div class="section-head"><h2>お薬の登録</h2><span class="small muted">'+S.meds.length+'件</span></div>'
+   +(S.meds.length?S.meds.map((m,i)=>editMedId===m.id?medEditForm(m):medManageRow(m,i)).join(''):'<p class="muted small">まだ登録がありません。</p>')
+   +'<form id="addMed" class="medform"><div class="section-head"><h2>新しく追加</h2></div><div class="formgrid">'
+   +'<div class="field full"><label for="a-name">名前</label><input id="a-name" type="text" maxlength="40" placeholder="例：葉酸サプリ"></div>'
+   +'<div class="field"><label for="a-time">服用時刻</label><input id="a-time" type="time" value="08:00"></div>'
+   +'<div class="field"><label for="a-count">錠数（1回）</label><input id="a-count" type="number" min="1" max="10" inputmode="numeric" value="1"></div>'
+   +'<div class="field"><label for="a-start">服用開始日</label><input id="a-start" type="date" value="'+t+'"></div>'
+   +'<div class="field"><label for="a-end">服用終了日（空欄で無期限）</label><input id="a-end" type="date"></div>'
+   +'</div><button type="submit" class="btn primary">追加する</button></form>'
    +'<p class="note">お薬の量や時間は、医師・薬剤師の指示を優先してください。</p></section>';
   return h;
 }
@@ -680,7 +790,12 @@ function render(){
   const dn=document.getElementById('dateNow');dn.textContent=mdj(t);dn.hidden=tab==='today';
   document.getElementById('sampleBanner').hidden=!S.sample;
   const v=document.getElementById('view');
+  if(tab!=='meds')histScroll=null;
   v.innerHTML=tab==='today'?viewToday():tab==='cal'?viewCal():tab==='chart'?viewChart():tab==='meds'?viewMeds():viewPrefs();
+  if(tab!=='meds')v.insertAdjacentHTML('afterbegin',missedBanner());
+  const hs=document.getElementById('hist');
+  if(hs){if(histScroll!=null)hs.scrollLeft=histScroll;else{const tc=hs.querySelector('.tcol');if(tc)hs.scrollLeft=Math.max(0,tc.offsetLeft-hs.clientWidth/2)}
+    hs.addEventListener('scroll',()=>{histScroll=hs.scrollLeft},{passive:true})}
   const gs=document.getElementById('gscroll');
   if(gs)bindChart(gs);
   v.style.display='flex';v.style.flexDirection='column';v.style.gap='16px';
@@ -699,10 +814,16 @@ function setBBT(day,val){
 document.addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   const t=today();
+  if(b.dataset.ics!==undefined){exportIcs();return}
   if(b.dataset.tab){tab=b.dataset.tab;chartScroll=null;armed=false;if(tab==='cal')sel=sel||t;render();window.scrollTo(0,0);return}
   if(b.dataset.go){tab=b.dataset.go;render();window.scrollTo(0,0);return}
   if(b.id==='clearSample'){S=blank();sel=t;commit('サンプルを消去しました');return}
   if(b.dataset.med){const id=b.dataset.med;S.medLog[t]=S.medLog[t]||{};if(S.medLog[t][id]){delete S.medLog[t][id];commit('取り消しました')}else{S.medLog[t][id]=nowHM();commit('服用を記録しました')}return}
+  if(b.dataset.mup){const i=S.meds.findIndex(m=>m.id===b.dataset.mup);if(i>0){[S.meds[i-1],S.meds[i]]=[S.meds[i],S.meds[i-1]];commit()}return}
+  if(b.dataset.mdown){const i=S.meds.findIndex(m=>m.id===b.dataset.mdown);if(i>=0&&i<S.meds.length-1){[S.meds[i+1],S.meds[i]]=[S.meds[i],S.meds[i+1]];commit()}return}
+  if(b.dataset.medit){editMedId=b.dataset.medit;render();return}
+  if(b.dataset.mcancel!==undefined){editMedId=null;render();return}
+  if(b.dataset.msave){saveMed(b.dataset.msave);return}
   if(b.dataset.mood){const d=b.dataset.mday;if(S.mood[d]===b.dataset.mood)delete S.mood[d];else S.mood[d]=b.dataset.mood;commit();return}
   if(b.dataset.cond){const d=b.dataset.cday,k=b.dataset.cond,l=S.cond[d]||[];S.cond[d]=l.includes(k)?l.filter(x=>x!==k):l.concat(k);if(!S.cond[d].length)delete S.cond[d];commit();return}
   const a=b.dataset.act;
@@ -724,9 +845,10 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('submit',e=>{
   if(e.target.id!=='addMed')return;e.preventDefault();
-  const n=document.getElementById('medName').value.trim(), tm=document.getElementById('medTime').value;
-  if(!n||!tm)return toast('名前と時刻を入力してください');
-  S.meds.push({id:'m'+Date.now().toString(36),name:n,time:tm});commit('「'+n+'」を追加しました');
+  const v=readMedForm('a-');if(!v)return;
+  if(!v.start)v.start=today();
+  S.meds.push(Object.assign({id:'m'+Date.now().toString(36)},v));
+  commit('「'+v.name+'」を追加しました');
 });
 document.addEventListener('change',e=>{
   const map={sCycle:['cycle',18,50],sPeriod:['period',2,10],sLuteal:['luteal',10,16]};
