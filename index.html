@@ -1,911 +1,1069 @@
 <!doctype html>
+<!--
+  Gメーター
+  バージョンの付け方: 機能の追加・変更 → 真ん中の数字を上げる（1.0.0 → 1.1.0）
+                      不具合の修正     → 最後の数字を上げる（1.1.0 → 1.1.1）
+  更新履歴:
+  1.7.0 (2026-11-08) ログ再生のグラフ: ピンチで時間方向に拡大・縮小、タップ／なぞってカーソル移動。再生中は表示範囲が自動で送られる。「グラフを全体表示」で戻す
+  1.6.0 (2026-11-08) オービス警告を追加。OpenStreetMapの speed_camera と自分で読み込んだ一覧（CSV）を使い、近づくとチャイムと表示で知らせる。
+                     地図に赤丸で表示。設定でオン／オフと警告距離（200〜1000m）。地図データは地域ごとに7日間キャッシュ
+  1.5.0 (2026-11-07) 録画を追加。カメラ表示中に「記録開始」でGのログと同時に録画（映像＋Gボール＋数値＋日時＋ログ名を合成）。
+                     動画はログと同じ日時の名前で「ファイル」アプリに保存。ログ再生時に「動画を選ぶ」で同期再生（ずれ調整・長さ／名前の確認つき）
+  1.4.0 (2026-11-07) カメラ表示を追加。カメラ映像の上にGボール・数値・制限速度を重ねて表示（「カメラ」ボタン）
+  1.3.1 (2026-11-07) 修正: 採点機能より前に保存したログがあると起動時にエラーになり、Gボールの目盛りが出ずセンサーも開始できなかった
+  1.3.0 (2026-11-07) 円内の最大G表示を削除。ログのグラフを左右G・前後G・車速・減点の4段に分割（減点は時系列で表示）
+  1.2.0 (2026-11-07) 採点機能を追加（運転操作によるジャーク＋Gボール軌跡の丸み。路面・振動ノイズは除外）
+  1.1.0 (2026-11-07) 制限速度の取得元を、混雑で応答しない Overpass から Valhalla（FOSSGIS の経路検索サーバー）に変更。直近のGPS軌跡で道を照合
+  1.0.3 (2026-11-07) 制限速度のサーバーを変更（overpass.private.coffee を優先、混雑中の overpass-api.de は予備）。つながったサーバーを次回も優先
+  1.0.2 (2026-11-07) 設定に制限速度サーバーの接続テストを追加。取得エラー時は制限の欄に「×」を表示
+  1.0.1 (2026-11-07) 制限速度の取得を修正（問い合わせ方式の変更）。道路はあるが制限速度が未登録なら「?」を表示。設定に取得状況を表示
+  1.0.0 (2026-11-07) バージョン管理を開始。Gメーター、最大Gの軌跡、ログ記録・再生・CSV、
+                     走行マップ、Gに応じた警告音、制限速度の表示と超過通知（マージン0〜50km/h、超過ごとに3回）
+-->
 <html lang="ja">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="まるこよみ">
-<meta name="theme-color" content="#15121A">
+<title>Gメーター</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-:root{color-scheme:dark;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-html{background:#15121A}
-body{margin:0;font-size:14px}
-img{max-width:100%}
+:root{--bg:#eef1f3;--fg:#12202e;--mut:#5f6f7e;--ring:#b8c2cb;--ball:#1f5eff;--peak:#e5484d;--panel:#fff;--btn:#12202e;--btnfg:#fff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1a24;--fg:#e6edf3;--mut:#8ea0b1;--ring:#2c3d4d;--ball:#ffb020;--peak:#ff6b6b;--panel:#16232f;--btn:#e6edf3;--btnfg:#0f1a24}}
+:root[data-theme="dark"]{--bg:#0f1a24;--fg:#e6edf3;--mut:#8ea0b1;--ring:#2c3d4d;--ball:#ffb020;--peak:#ff6b6b;--panel:#16232f;--btn:#e6edf3;--btnfg:#0f1a24}
 [hidden]{display:none!important}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;max-width:460px;margin:0 auto;padding:10px 16px 0}
+nav{display:flex;gap:6px}
+.in,main{max-width:460px;margin:0 auto;padding:12px 16px 28px}
+h2{font-size:.95rem;margin:18px 0 6px}
+#c,#vc,#g,#vg{display:block;width:100%;background:var(--panel)}
+#c,#vc{aspect-ratio:1;border-radius:50%}
+#vc{width:min(100%,320px);margin:8px auto}
+.bw{position:relative}
+.corner{position:absolute;left:0;bottom:0;display:flex;flex-direction:column;gap:6px}
+.corner button{padding:6px 9px;font-size:.75rem}
+#g,#vg{height:288px;border-radius:10px;margin-top:10px}
+#vg{touch-action:pan-y;cursor:crosshair;-webkit-user-select:none;user-select:none}
+#mp,#vm{height:300px;border-radius:10px;margin-top:10px;background:var(--panel);z-index:0;overflow:hidden}
+.mcap{color:var(--mut);font-size:.75rem;margin:4px 2px 0}
+.sc{background:var(--panel);border-radius:12px;padding:12px 14px;margin:10px 0}
+.st{display:flex;align-items:baseline;gap:4px;margin-bottom:6px}
+.st b{font-size:2.6rem;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.st span{color:var(--mut)}
+.sr{display:grid;grid-template-columns:1fr auto;gap:0 10px;padding:7px 0;border-top:1px solid var(--ring)}
+.sr b{font-size:1.15rem;font-variant-numeric:tabular-nums}
+.sr small{grid-column:1/-1;color:var(--mut);font-size:.72rem}
+.mempty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--mut);font-size:.85rem;text-align:center;padding:0 12px}
+.big{text-align:center;margin:12px 0 4px;font-variant-numeric:tabular-nums}
+.big b{font-size:3.4rem;letter-spacing:-.02em}
+.big span{color:var(--mut);margin-left:4px}
+.row{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:10px 0;font-variant-numeric:tabular-nums}
+.row div{background:var(--panel);border-radius:10px;padding:7px 8px}
+.row small{display:block;color:var(--mut);font-size:.68rem}
+.row strong{font-size:1rem}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+button,select{font:inherit;font-size:.85rem;padding:9px 12px;border-radius:10px;border:1px solid var(--ring);background:var(--panel);color:var(--fg)}
+button.p,.tab.on{background:var(--btn);color:var(--btnfg);border-color:var(--btn)}
+button.on{border-color:var(--peak);color:var(--peak)}
+.orb{margin:8px 0 0;padding:10px 12px;border-radius:10px;background:#dc2626;color:#fff;font-weight:700;text-align:center;font-variant-numeric:tabular-nums}
+#camo{margin:6px 0 0;padding:6px 10px;font-size:.95rem}
+.tab{border-radius:20px}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--ball);outline-offset:2px}
+#msg{color:var(--mut);font-size:.85rem;min-height:2.4em;margin:10px 0 0}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;background:var(--panel);border-radius:10px;padding:10px 12px;margin:6px 0}
+li small{display:block;color:var(--mut)}
+#camw{position:fixed;inset:0;background:#000;z-index:7;overflow:hidden}
+#camv{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#camc{position:absolute;display:block;left:12px;bottom:calc(16px + env(safe-area-inset-bottom,0px));width:min(42vw,200px);height:min(42vw,200px);border-radius:50%;background:rgba(0,0,0,.35)}
+#camt{position:absolute;right:12px;top:calc(12px + env(safe-area-inset-top,0px));color:#fff;background:rgba(0,0,0,.45);border-radius:12px;padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000}
+#camg{font-size:2.4rem;font-weight:700;letter-spacing:-.02em}
+#camd,#cams{font-size:.8rem}
+#camx{position:absolute;left:12px;top:calc(12px + env(safe-area-inset-top,0px))}
+#camb{position:absolute;right:12px;bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+#camr{color:#ff6b6b;font-weight:700;font-size:.85rem}
+#vv{display:block;width:100%;border-radius:10px;margin-top:8px;background:#000}
+#vw{position:fixed;inset:0;background:var(--bg);overflow:auto;z-index:5;padding-top:env(safe-area-inset-top,0px)}
+#vr{text-align:center;font-variant-numeric:tabular-nums;margin:4px 0}
+input[type=range]{width:100%}
+dialog{border:1px solid var(--ring);border-radius:16px;background:var(--panel);color:var(--fg);width:min(92vw,420px);padding:16px}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+.set{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--ring)}
+.set input[type=checkbox]{width:22px;height:22px}
+.set input[type=range]{width:45%}
 </style>
-<title>まるこよみ 妊活手帳</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&display=swap">
-<style>
-/* Layout: one-column phone app, cycle ring as the home hero, fixed bottom tab bar */
-:root{
-  --bg:#F5F4F9; --surface:#FFFFFF; --line:#E3DFEB; --fg:#28222F; --muted:#6D6578;
-  --plum:#5B3F7A; --plum-soft:#ECE4F5;
-  --rose:#D4435C; --rose-soft:#F8DCE1;
-  --teal:#1C8378; --teal-soft:#D2ECE8;
-  --amber:#B8730F; --amber-soft:#F8E8CC;
-  --grid:#EFECF4; --wk:#F7F5FA; --sat:#2F6DB0; --hl:#FAD9E6; --heart:#DE4F86;
-  --good:#2E8A4F; --good-soft:#DCF0E2; --neutral:#7C748A; --neutral-soft:#ECEAF0; --bad:#D12E6B; --bad-soft:#FBDCE8;
-  --period:#3566D6; --period-soft:#DCE6FA; --fert:#D99A00; --fert-soft:#FFF0C4; --ovu:#EE7417; --ovu-soft:#FDE2CC;
-  --on-color:#FFFFFF;
-  --font-display:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;
-  --font-body:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
-}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#15121A; --surface:#201B27; --line:#352E3F; --fg:#EFEBF4; --muted:#A79FB2;
-  --plum:#BDA0DE; --plum-soft:#2F2540;
-  --rose:#F07087; --rose-soft:#46222C;
-  --teal:#52C3B4; --teal-soft:#153833;
-  --amber:#E9A746; --amber-soft:#3A2B12;
-  --grid:#2A2432; --wk:#1C1823; --sat:#7EAEE6; --hl:#4A2238; --heart:#F48BB0;
-  --good:#62C985; --good-soft:#173322; --neutral:#ABA3B6; --neutral-soft:#2B2633; --bad:#F26D9E; --bad-soft:#44172A;
-  --period:#7FA3F5; --period-soft:#1C2944; --fert:#F2C94C; --fert-soft:#3A3010; --ovu:#FF9A4A; --ovu-soft:#40260F;
-  --on-color:#15121A; color-scheme:dark;
-}}
-:root[data-theme="dark"]{
-  --bg:#15121A; --surface:#201B27; --line:#352E3F; --fg:#EFEBF4; --muted:#A79FB2;
-  --plum:#BDA0DE; --plum-soft:#2F2540;
-  --rose:#F07087; --rose-soft:#46222C;
-  --teal:#52C3B4; --teal-soft:#153833;
-  --amber:#E9A746; --amber-soft:#3A2B12;
-  --grid:#2A2432; --wk:#1C1823; --sat:#7EAEE6; --hl:#4A2238; --heart:#F48BB0;
-  --good:#62C985; --good-soft:#173322; --neutral:#ABA3B6; --neutral-soft:#2B2633; --bad:#F26D9E; --bad-soft:#44172A;
-  --period:#7FA3F5; --period-soft:#1C2944; --fert:#F2C94C; --fert-soft:#3A3010; --ovu:#FF9A4A; --ovu-soft:#40260F;
-  --on-color:#15121A; color-scheme:dark;
-}
-*{box-sizing:border-box}
-body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:15px;line-height:1.6;-webkit-tap-highlight-color:transparent}
-.app{max-width:520px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 112px;display:flex;flex-direction:column;gap:16px}
-h1,h2,h3{font-family:var(--font-display);font-weight:700;margin:0;text-wrap:balance}
-h1{font-size:20px;letter-spacing:.02em}
-h2{font-size:17px}
-.muted{color:var(--muted)}
-.small{font-size:13px}
-.num{font-variant-numeric:tabular-nums}
-button{font:inherit;color:inherit;cursor:pointer}
-button:focus-visible,input:focus-visible{outline:2px solid var(--plum);outline-offset:2px}
-.topbar{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.brand{display:flex;align-items:center;gap:8px}
-.brand svg{flex:none}
-.date-now{font-size:13px;color:var(--muted)}
-.banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 14px;border-radius:12px;background:var(--plum-soft);font-size:13px}
-.banner.warn{background:var(--rose-soft)}
-.banner button{border:0;background:var(--surface);padding:6px 12px;border-radius:999px;font-size:13px;font-weight:600}
-.panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
-.section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
-/* ring */
-.hero{display:flex;flex-direction:column;align-items:center;gap:10px;padding-block:8px}
-.ring{width:100%;max-width:280px;aspect-ratio:1;position:relative}
-.ring svg{width:100%;height:100%;display:block}
-.ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none}
-.ring-center .lbl{font-size:12px;color:var(--muted);letter-spacing:.08em}
-.ring-center .big{font-family:var(--font-display);font-size:56px;line-height:1;font-weight:700}
-.ring-center .unit{font-size:13px;color:var(--muted)}
-.seg{fill:none;stroke-width:18}
-.seg-normal{stroke:var(--line)}
-.seg-period{stroke:var(--period)}
-.seg-fertile{stroke:var(--fert-soft)}
-.seg-ov{stroke:var(--ovu)}
-.seg-future{opacity:.55}
-.status{text-align:center;display:flex;flex-direction:column;gap:2px}
-.status .main{font-family:var(--font-display);font-size:22px;font-weight:700}
-.status .sub{color:var(--muted);font-size:14px}
-.legend{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;font-size:12px;color:var(--muted)}
-.legend span{display:inline-flex;align-items:center;gap:5px}
-.sw{width:10px;height:10px;border-radius:3px;display:inline-block}
-.sw.period{background:var(--period)}.sw.pred{border:1.5px dashed var(--period)}.sw.fertile{background:var(--fert-soft);border:1px solid var(--fert)}.sw.ov{background:var(--ovu)}.sw.timing{background:var(--plum);border-radius:50%}
-.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.fact{background:var(--bg);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:2px;min-width:0}
-.fact .k{font-size:11px;color:var(--muted);letter-spacing:.04em}
-.hero-date{align-self:stretch;text-align:center;font-family:var(--font-display);font-size:19px;font-weight:700}
-.strip{align-self:stretch;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
-.sd{border:0;background:transparent;border-radius:12px;padding:6px 0;display:flex;flex-direction:column;align-items:center;gap:2px;font-variant-numeric:tabular-nums}
-.sd .w{font-size:11px;color:var(--muted)}
-.sd .n{position:relative;font-size:16px;font-weight:700;width:34px;height:34px;border-radius:50%;display:grid;place-items:center}
-.sd .m{display:flex;gap:1px;justify-content:center;min-height:13px}
-.sd.period .n{background:var(--period);color:var(--on-color)}
-.sd.pred .n{box-shadow:inset 0 0 0 1.5px var(--period);color:var(--period)}
-.sd.fertile .n{background:var(--fert-soft)}
-.sd.ov .n{background:var(--ovu);color:var(--on-color)}
-.sd.today{background:var(--plum-soft)}
-.sd.today .w{color:var(--plum);font-weight:700}
-.fact .v{font-family:var(--font-display);font-size:16px;font-weight:700;line-height:1.3}
-.fact .d{font-size:12px;color:var(--muted)}
-.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.btn{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:12px 10px;font-weight:600;font-size:14px;text-align:center}
-.btn.primary{background:var(--period);border-color:var(--period);color:var(--on-color)}
-.btn.on{background:var(--plum);border-color:var(--plum);color:var(--on-color)}
-.btn.ghost{background:transparent}
-.btn.danger{color:var(--rose);border-color:var(--rose)}
-.btn.danger.armed{background:var(--rose);color:var(--on-color)}
-.hint{font-size:13px;color:var(--muted);background:var(--bg);padding:10px 12px;border-radius:10px}
-.hint strong{color:var(--teal)}
-/* bbt */
-.bbt-row{display:flex;gap:8px;align-items:center}
-.bbt-row input{flex:1;min-width:0}
-input[type=number],input[type=text],input[type=time]{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
-.chart{width:100%;overflow-x:auto}
-.chart svg{display:block;width:100%;height:auto}
-/* calendar */
-.cal-head{display:flex;align-items:center;justify-content:space-between}
-.cal-head button{border:1px solid var(--line);background:var(--surface);width:40px;height:40px;border-radius:50%;font-size:18px}
-.grid7{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
-.day{position:relative;height:64px;min-width:0;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:transparent;display:block;text-align:left;padding:5px 5px 0;font-variant-numeric:tabular-nums;color:var(--fg)}
-.day.out{pointer-events:none}
-.day .dn{font-size:14px;line-height:1}
-.day.sun .dn{color:var(--rose)}.day.sat .dn{color:var(--sat)}
-.day.today{background:var(--amber-soft)}
-.day.today .dn{font-weight:700}
-.day.sel{box-shadow:inset 0 0 0 2px var(--plum)}
-.day:nth-child(7n+1){border-left:1px solid var(--line)}
-.wd{border-bottom:1px solid var(--line)}
-.day .tops{position:absolute;top:6px;right:5px;display:flex;gap:2px}
-.tdot{width:7px;height:7px;border-radius:50%;display:block}
-.tdot.m-good{background:var(--good)}.tdot.m-neutral{background:var(--neutral)}.tdot.m-bad{background:var(--bad)}.tdot.lh{background:var(--amber)}
-.day .dic{position:absolute;right:3px;bottom:8px;display:flex;gap:1px;align-items:center}
-.stripe{position:absolute;left:0;right:0;bottom:1px;height:3px}
-.s-period{background:var(--period)}
-.s-pred{background:repeating-linear-gradient(90deg,var(--period) 0 4px,transparent 4px 7px)}
-.s-fert{background:var(--fert)}
-.ic{display:block;flex:none}
-.ic.line path{fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round}
-.ic.fill path{fill:currentColor}
-.ic.egg path{fill:var(--ovu-soft);stroke:var(--ovu);stroke-width:1.8}
-.k-period{color:var(--period)}.k-fert{color:var(--fert)}.k-ovu{color:var(--ovu)}.k-heart{color:var(--heart)}
-.legend .ic{display:inline-block}
-.wd{text-align:center;font-size:11px;color:var(--muted);padding-bottom:2px}
-.wd:first-child{color:var(--rose)}
-.wd:nth-child(7){color:var(--sat)}
-.sw.rec{border:2px dotted var(--plum);border-radius:50%}
-.chips{display:flex;flex-wrap:wrap;gap:8px}
-.chip{--c:var(--neutral);--cs:var(--neutral-soft);border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 14px;font-size:14px;display:inline-flex;align-items:center;gap:6px}
-.chip::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--c);flex:none}
-.chip.good{--c:var(--good);--cs:var(--good-soft)}.chip.bad{--c:var(--bad);--cs:var(--bad-soft)}
-.chip[aria-pressed="true"]{background:var(--cs);border-color:var(--c);color:var(--c);font-weight:700}
-.cat-legend{display:flex;gap:12px;font-size:11px;color:var(--muted)}
-.cat-legend span{display:inline-flex;align-items:center;gap:4px}
-.cat-legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
-.rec-days{display:flex;flex-direction:column;gap:2px;margin-top:4px;color:var(--fg);font-variant-numeric:tabular-nums}
-.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.seg-ctl{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-.seg-ctl button{border:0;background:var(--surface);padding:10px 4px;font-size:14px}
-.seg-ctl button+button{border-left:1px solid var(--line)}
-.seg-ctl button[aria-pressed="true"]{background:var(--plum);color:var(--on-color);font-weight:600}
-.field{display:flex;flex-direction:column;gap:6px}
-.field label{font-size:12px;color:var(--muted);letter-spacing:.04em}
-/* meds */
-.med{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
-.med:first-of-type{border-top:0}
-.med .t{font-family:var(--font-display);font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
-.med .n{font-weight:600;overflow-wrap:anywhere}
-.pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;letter-spacing:.03em}
-.pill.taken{background:var(--teal-soft);color:var(--teal)}
-.pill.missed{background:var(--rose-soft);color:var(--rose)}
-.pill.wait{background:var(--plum-soft);color:var(--plum)}
-.check{width:52px;height:52px;border-radius:50%;border:2px solid var(--line);background:var(--surface);display:grid;place-items:center}
-.check.done{background:var(--teal);border-color:var(--teal);color:var(--on-color)}
-.check.missed{border-color:var(--rose)}
-.add-row{display:grid;grid-template-columns:1fr 112px;gap:8px}
-.manage{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
-.manage button{border:0;background:transparent;color:var(--rose);font-size:13px;padding:6px}
-.hist{overflow-x:auto}
-.hist table{border-collapse:collapse;width:100%;font-size:12px}
-.hist th,.hist td{padding:6px 2px;text-align:center;font-variant-numeric:tabular-nums}
-.hist th:first-child,.hist td:first-child{text-align:left;max-width:110px;overflow-wrap:anywhere}
-.mk{display:inline-block;width:18px;height:18px;border-radius:5px;background:var(--line)}
-.mk.ok{background:var(--teal)}
-.mk.ng{background:var(--rose-soft);box-shadow:inset 0 0 0 1.5px var(--rose)}
-/* settings */
-.set-row{display:grid;grid-template-columns:1fr 96px;gap:12px;align-items:center}
-.cycles{display:flex;flex-wrap:wrap;gap:6px}
-.cycles span{background:var(--bg);border-radius:8px;padding:4px 10px;font-size:13px;font-variant-numeric:tabular-nums}
-.note{font-size:12px;color:var(--muted);line-height:1.7}
-/* gantt */
-.gpanel{padding:16px 0 0;overflow:hidden}
-.gpanel .section-head{padding-inline:16px;flex-wrap:wrap}
-.gscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-top:1px solid var(--line)}
-.gg{display:grid;width:max-content}
-.gl{position:sticky;left:0;z-index:4;background:var(--surface);font-size:10px;display:flex;align-items:center;gap:3px;padding-left:5px;height:20px;border-right:1px solid var(--line);white-space:nowrap;overflow:hidden}
-.gc{height:20px;display:flex;align-items:center;justify-content:center;box-shadow:inset -1px 0 var(--grid);min-width:0;overflow:visible}
-.gc.wk{background:var(--wk)}
-.gc.hl{background:var(--hl)}
-.gc.tcol{box-shadow:inset 1.5px 0 var(--plum),inset -1.5px 0 var(--plum)}
-.gm{font-size:10px;font-weight:700;white-space:nowrap;margin-right:auto;padding-left:2px;position:relative;z-index:1}
-.gc:has(.gm){justify-content:flex-start}
-.gdate-l,.gdc{height:30px;border-bottom:1px solid var(--line)}
-.gd{border:0;background:transparent;padding:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:visible;font-variant-numeric:tabular-nums}
-.gd b{font-size:clamp(4px,calc(var(--cw) * .9),12px);letter-spacing:-.04em;line-height:1;position:relative;z-index:1}
-.gd b.vt{writing-mode:vertical-rl;text-orientation:upright;letter-spacing:-.08em}
-.gd small{font-size:8px;color:var(--muted);line-height:1.1}
-.gc .ic{width:clamp(6px,calc(var(--cw) + 2px),14px);height:clamp(6px,calc(var(--cw) + 2px),14px)}
-.gbbt svg{width:100%;height:170px}
-.zoom{display:flex;align-items:center;gap:6px}
-.zoom button{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:16px;line-height:1}
-.zoom span{min-width:40px;text-align:center;font-size:13px;color:var(--muted)}
-.gscroll{touch-action:pan-x pan-y}
-.gd.sun b{color:var(--rose)}
-.gd.sat b{color:var(--sat)}
-.gd.now b{background:var(--plum);color:var(--on-color);border-radius:4px;padding:2px 1px;z-index:2}
-.gh{height:16px;font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.06em;border-top:1px solid var(--line)}
-.ghc{height:16px;border-top:1px solid var(--line)}
-.bar{display:block;flex:1 1 auto;height:10px}
-.bar.s{margin-left:1px;border-top-left-radius:5px;border-bottom-left-radius:5px}
-.bar.e{margin-right:1px;border-top-right-radius:5px;border-bottom-right-radius:5px}
-.b-period{background:var(--period)}
-.b-fert{background:var(--fert-soft);box-shadow:inset 0 1px var(--fert),inset 0 -1px var(--fert)}
-.b-pred{height:9px;border-top:1px dashed var(--period);border-bottom:1px dashed var(--period)}
-.b-pred.s{border-left:1px dashed var(--period)}.b-pred.e{border-right:1px dashed var(--period)}
-.gemo{font-size:11px;line-height:1;position:relative;z-index:1}
-.gdot{width:6px;height:6px;border-radius:50%;display:block;flex:none}
-.g-tim{background:var(--plum);width:7px;height:7px}
-.gdot.c-good{background:var(--good)}.gdot.c-neutral{background:var(--neutral)}.gdot.c-bad{background:var(--bad)}
-.gk{width:6px;height:6px;border-radius:50%;flex:none}
-.gk.good{background:var(--good)}.gk.neutral{background:var(--neutral)}.gk.bad{background:var(--bad)}
-.gmood{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:700;color:var(--on-color)}
-.gmood.good{background:var(--good)}.gmood.neutral{background:var(--neutral)}.gmood.bad{background:var(--bad)}
-.gbbt-l{height:170px;align-items:stretch;padding-left:0}
-.gbbt{height:170px}
-.gbbt svg{display:block}
-/* nav */
-.nav{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--line);padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px));padding-bottom:env(safe-area-inset-bottom,0px)}
-.nav-in{max-width:520px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
-.nav button{border:0;background:transparent;padding:8px 0 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted)}
-.nav button[aria-current="page"]{color:var(--plum);font-weight:700}
-.nav svg{width:24px;height:24px}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:13px;z-index:30;max-width:calc(100% - 32px);transition:opacity .2s}
-@media (prefers-reduced-motion: reduce){.toast{transition:none}}
-.manage{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
-.mbtns{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
-.mbtns button{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:6px 8px;font-size:12px;min-width:34px}
-.mbtns button.del{color:var(--bad);border-color:var(--bad)}
-.mbtns button:disabled{opacity:.35}
-.mbtns .primary-s{background:var(--period);border-color:var(--period);color:var(--on-color)}
-.med.off{opacity:.55}
-.medform{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);margin-top:8px;padding-top:12px}
-.mededit{border-top:1px solid var(--line);padding:10px 0}
-.formgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
-.formgrid .full{grid-column:1 / -1}
-.formgrid input{min-width:0;width:100%}
-input[type=date],input[type=time]{-webkit-appearance:none;appearance:none;min-width:0;max-width:100%}
-.icsrow{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
-.icsrow .btn{width:100%}
-.icsrow .note{margin:0}
-.hist{position:relative}
-.hist th,.hist td{min-width:34px}
-.hist th:first-child,.hist td:first-child{position:sticky;left:0;background:var(--surface);z-index:1;min-width:0;max-width:96px;box-shadow:1px 0 0 var(--line)}
-.hist th.tcol,.hist td.tcol{background:var(--plum-soft)}
-.hist th.tcol{color:var(--plum);font-weight:700}
-.hist th:first-child,.hist td:first-child{white-space:nowrap;max-width:none;overflow-wrap:normal;padding-right:10px}
-.med>div:nth-child(2){min-width:0}
-.med .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
-.manage>div:first-child>div:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mkb{border:0;background:transparent;padding:6px;margin:-6px;line-height:0;cursor:pointer}
-.mkb .mk{display:block}
-.icslist{display:flex;flex-direction:column;max-height:280px;overflow-y:auto}
-.icsitem{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:10px;align-items:center;padding:9px 2px;border-top:1px solid var(--line);cursor:pointer}
-.icsitem input{width:20px;height:20px;margin:0;accent-color:var(--heart)}
-.linkbtn{border:0;background:transparent;color:var(--plum);font-size:13px;padding:4px}
-.btn:disabled{opacity:.45}
-/* 常にダーク表示 */
-:root,:root[data-theme="light"],:root[data-theme="dark"]{
-  --bg:#15121A; --surface:#201B27; --line:#352E3F; --fg:#EFEBF4; --muted:#A79FB2;
-  --plum:#BDA0DE; --plum-soft:#2F2540;
-  --rose:#F07087; --rose-soft:#46222C;
-  --teal:#52C3B4; --teal-soft:#153833;
-  --amber:#E9A746; --amber-soft:#3A2B12;
-  --grid:#2A2432; --wk:#1C1823; --sat:#7EAEE6; --hl:#4A2238; --heart:#F48BB0;
-  --good:#62C985; --good-soft:#173322; --neutral:#ABA3B6; --neutral-soft:#2B2633; --bad:#F26D9E; --bad-soft:#44172A;
-  --period:#7FA3F5; --period-soft:#1C2944; --fert:#F2C94C; --fert-soft:#3A3010; --ovu:#FF9A4A; --ovu-soft:#40260F;
-  --on-color:#15121A; color-scheme:dark;
-}
-</style>
-
 </head>
 <body>
-<div class="app" id="app">
-  <header class="topbar">
-    <div class="brand">
-      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10" fill="none" stroke="var(--line)" stroke-width="4"/><path d="M13 3 A10 10 0 0 1 22.5 10" fill="none" stroke="var(--period)" stroke-width="4"/><path d="M21 18 A10 10 0 0 1 16 22.5" fill="none" stroke="var(--teal)" stroke-width="4"/></svg>
-      <h1>まるこよみ</h1>
-    </div>
-    <div class="date-now num" id="dateNow"></div>
-  </header>
-  <div id="sampleBanner" class="banner" hidden>
-    <span>サンプルの記録を表示しています</span>
-    <button type="button" id="clearSample">消去して自分の記録を始める</button>
-  </div>
-  <main id="view"></main>
+<header>
+<nav><button class="tab on" data-t="m">メーター</button><button class="tab" data-t="l">ログ</button></nav>
+<button id="gear" aria-label="設定">⚙ 設定</button>
+</header>
+<main>
+<section id="pm">
+<div class="bw"><canvas id="c" aria-label="Gボール"></canvas><div class="corner"><button id="cal">0点合わせ</button><button id="rst">最大値を消す</button></div></div>
+<div class="big"><b id="mag">0.00</b><span>G</span></div>
+<div class="row">
+<div><small>左右</small><strong id="gx">0.00</strong></div>
+<div><small>前後</small><strong id="gy">0.00</strong></div>
+<div><small>最大G</small><strong id="pk">0.00</strong></div>
+<div><small>km/h</small><strong id="sp">--</strong></div>
+<div><small>制限</small><strong id="lim">--</strong></div>
 </div>
-
-<nav class="nav" aria-label="メニュー">
-  <div class="nav-in">
-        <button type="button" data-tab="cal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>カレンダー</button>
-    <button type="button" data-tab="chart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3.5 4v16h17"/><path d="M6.5 15l4-5 3.5 3 5-6.5"/></svg>グラフ</button>
-    <button type="button" data-tab="meds"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="8.5" width="18" height="7" rx="3.5" transform="rotate(-35 12 12)"/><path d="M9.3 8.2l5.4 7.6"/></svg>お薬</button>
-    <button type="button" data-tab="prefs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>設定</button>
-  </div>
-</nav>
-<div class="toast" id="toast" hidden></div>
-
+<p id="orb" class="orb" role="status" hidden></p>
+<p id="scl" class="mcap" hidden></p>
+<div class="btns">
+<button class="p" id="start">開始</button>
+<button id="rec">記録開始</button>
+<button id="cam">カメラ</button>
+<button id="vdl" hidden>動画を保存</button>
+</div>
+</section>
+<section id="pl" hidden>
+<canvas id="g" aria-label="Gのグラフ"></canvas>
+<div id="mp" aria-label="走行マップ"></div>
+<p class="mcap">緑の丸＝開始　赤の丸＝オービス　線の色＝G（青→緑→黄→赤）　ピンチで拡大・縮小</p>
+<div class="btns"><button id="mfol">現在地</button><button id="mall">全体表示</button><button id="clr">軌跡を消す</button></div>
+<h2>保存したログ</h2>
+<div class="btns" style="margin:0 0 6px"><button id="imp">CSVを読み込む</button><input type="file" id="impf" accept=".csv,text/csv,text/plain" hidden></div>
+<ul id="list"></ul>
+</section>
+<p id="msg">「開始」を押すと、センサーとGPSが動き出し、傾きや加減速でボールが動きます。</p>
+</main>
+<div id="vw" hidden><div class="in">
+<div class="btns" style="align-items:center"><button id="vx">← 戻る</button><b id="vn"></b></div>
+<video id="vv" playsinline muted hidden></video>
+<canvas id="vc" aria-label="再生中のGボール"></canvas>
+<p id="vr"></p>
+<div id="vsc"></div>
+<div class="btns"><button class="p" id="vp">▶ 再生</button><select id="vs" aria-label="再生速度"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option></select></div>
+<input type="range" id="vk" min="0" max="0" value="0" step="1" aria-label="再生位置">
+<div class="btns"><button id="vvid">動画を選ぶ</button><input type="file" id="vvf" accept="video/*" hidden></div>
+<p class="mcap" id="vvst"></p>
+<div class="set" id="vadjw" hidden><span>動画のずれ調整 <b><span id="vadjv">0.0</span> 秒</b></span><input type="range" id="vadj" min="-5" max="5" step="0.1" value="0" aria-label="動画のずれ調整"></div>
+<div id="vmw"><div id="vm" aria-label="ログの走行マップ"></div>
+<p class="mcap">緑の丸＝開始　青の丸＝再生位置　線の色＝G（青→緑→黄→赤）　ピンチで拡大・縮小</p>
+<div class="btns"><button id="vall">全体表示</button></div></div>
+<p class="mcap" id="vnogps" hidden>このログにはGPSの位置がないので、地図は出ません。記録するときは「開始」を押してGPSも動かしてください。</p>
+<canvas id="vg" aria-label="ログのグラフ"></canvas>
+<p class="mcap" id="vgz">ピンチで拡大・縮小　タップでカーソル移動</p>
+<div class="btns"><button id="vgall" hidden>グラフを全体表示</button></div>
+</div></div>
+<div id="camw" hidden>
+<video id="camv" playsinline muted autoplay aria-label="カメラ映像"></video>
+<canvas id="camc" aria-label="Gボール"></canvas>
+<div id="camt"><div><b id="camg">0.00</b> G</div><div id="camd"></div><div id="cams"></div><div id="camr"></div><div id="camo" class="orb" hidden></div></div>
+<button id="camx">✕ 閉じる</button>
+<div id="camb"><button id="camdl" hidden>動画を保存</button><button id="camrec">記録開始</button><button class="p" id="camst">開始</button></div>
+</div>
+<canvas id="camrc" aria-hidden="true" style="position:fixed;left:-10000px;top:0;width:10px;height:10px"></canvas>
+<dialog id="st">
+<h2 style="margin-top:0">設定</h2>
+<div class="set"><span>警告音</span><input type="checkbox" id="snd" aria-label="警告音"></div>
+<div class="set"><span>制限速度超過で通知</span><input type="checkbox" id="over" aria-label="速度超過の通知"></div>
+<div class="set"><span>通知のタイミング <b>+<span id="mgv">0</span> km/h</b></span><input type="range" id="mg" min="0" max="50" step="5" aria-label="制限速度からの超過量"></div>
+<div class="set"><span>音が鳴り始めるG <b><span id="thrv">0.5</span> G</b></span><input type="range" id="thr" min="0" max="1" step="0.1" aria-label="音が鳴り始めるG"></div>
+<div class="set"><span>左右反転</span><input type="checkbox" id="fx"></div>
+<div class="set"><span>前後反転</span><input type="checkbox" id="fy"></div>
+<div class="set"><span>LPF <b><span id="fcv">2</span> Hz</b></span><input type="range" id="fc" min="0.5" max="20" step="0.5" aria-label="カットオフ周波数"></div>
+<div class="set"><span>制限速度の接続テスト</span><button id="ltest">テスト</button></div>
+<p class="mcap" id="limst"></p>
+<p class="mcap">制限の欄：「…」取得中　「×」取得エラー　「?」道はあるが制限速度が地図データに未登録　「--」近くに道が見つからない</p>
+<div class="set"><span>オービス警告</span><input type="checkbox" id="orbon" aria-label="オービス警告"></div>
+<div class="set"><span>警告する距離 <b><span id="odv">500</span> m</b></span><input type="range" id="od" min="200" max="1000" step="100" aria-label="オービス警告の距離"></div>
+<div class="set"><span>自分のオービス一覧 <small id="ocnt"></small></span><span><button id="oimp">読み込む</button> <button id="oclr">消す</button></span><input type="file" id="oimpf" accept=".csv,text/csv,text/plain" hidden></div>
+<p class="mcap" id="orbst"></p>
+<p class="mcap">オービスは、地図データ（OpenStreetMap）に登録された地点と、読み込んだ一覧（1行に「緯度,経度,名前」のCSV）を使います。地図データの登録は一部だけなので、すべてのオービスで鳴るわけではありません。</p>
+<p class="mcap" id="ver"></p>
+<div class="btns"><button class="p" id="stx">閉じる</button></div>
+</dialog>
 <script>
-(function(){
-const KEY='marukoyomi-v1';
-const WD=['日','月','火','水','木','金','土'];
-const pad=n=>String(n).padStart(2,'0');
-const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
-const parse=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c,12)};
-const add=(s,n)=>{const d=parse(s);d.setDate(d.getDate()+n);return ymd(d)};
-const diff=(a,b)=>Math.round((parse(a)-parse(b))/864e5);
-const today=()=>ymd(new Date());
-const nowHM=()=>{const d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())};
-const md=s=>{const d=parse(s);return (d.getMonth()+1)+'月'+d.getDate()+'日'};
-const mds=s=>{const d=parse(s);return (d.getMonth()+1)+'/'+d.getDate()};
-const mdj=s=>{const d=parse(s);return (d.getMonth()+1)+'月'+d.getDate()+'日（'+WD[d.getDay()]+'）'};
-const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-function sample(){
-  const t=today(), d=blank(); d.sample=true; d.sampleVer=5;
-  let seed=20261107; const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647};
-  const pick=a=>a[Math.floor(rnd()*a.length)];
-  const cyc=[{s:-69,len:5,ov:-55,next:-41},{s:-41,len:6,ov:-26,next:-12},{s:-12,len:5,ov:3,next:17}];
-  cyc.forEach(c=>{for(let i=0;i<c.len;i++)if(c.s+i<=0)d.period[add(t,c.s+i)]=true});
-  d.meds=[{id:'m1',name:'葉酸サプリ',time:'08:00',start:add(t,-70),count:2},{id:'m2',name:'処方薬（例）',time:'21:00',start:add(t,-70),end:add(t,30),count:1}];
-  for(let o=-69;o<=0;o++){
-    const day=add(t,o), c=cyc.filter(x=>x.s<=o).pop();
-    const inPeriod=o<c.s+c.len, high=o>c.ov, pms=c.next-o<=4, fert=o>=c.ov-5&&o<=c.ov+1;
-    {let v=(high?36.76:36.32)+(rnd()-.5)*.2;if(o===c.ov)v-=.12;if(o===c.ov+1)v+=.18;d.bbt[day]=Math.round(v*100)/100}
-    d.mood[day]=(inPeriod||pms)?pick(['irritated','lonely','normal','irritated']):pick(['happy','fun','normal','happy','fun','normal']);
-    const cs=[];
-    if(fert&&rnd()<.8)cs.push('discharge');
-    if(rnd()<.6)cs.push('poop');
-    if(inPeriod&&o-c.s<2&&rnd()<.85)cs.push('cramp');
-    if(rnd()<(high?.4:.2))cs.push('sleepy');
-    if(rnd()<(pms?.4:.1))cs.push('headache');
-    if((inPeriod||pms)&&rnd()<.5)cs.push('backache');
-    if((pms||inPeriod)&&rnd()<.35)cs.push('skin');
-    if(rnd()<(pms?.5:.2))cs.push('appetite');
-    if(cs.length)d.cond[day]=cs;
-    const log={};
-    if(rnd()>.06)log.m1='08:'+pad(Math.floor(rnd()*20));
-    if(o<0&&rnd()>.1)log.m2='21:'+pad(Math.floor(rnd()*15));
-    if(Object.keys(log).length)d.medLog[day]=log;
-  }
-  [-59,-57,-55,-48,-30,-28,-26,-20,-1].forEach(o=>d.timing[add(t,o)]=true);
-  [[-58,'neg'],[-57,'neg'],[-56,'pos'],[-55,'neg'],[-29,'neg'],[-28,'neg'],[-27,'pos'],[-26,'neg'],[-2,'neg'],[-1,'neg'],[0,'neg']].forEach(([o,v])=>d.lh[add(t,o)]=v);
-  return d;
-}
-function blank(){return{v:1,sample:false,settings:{cycle:28,period:5,luteal:14},period:{},timing:{},bbt:{},lh:{},meds:[],medLog:{},mood:{},cond:{}}}
-function load(){try{const r=localStorage.getItem(KEY);if(r){const d=JSON.parse(r);if(d&&d.v===1)return d}}catch(e){}return null}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
-
-let S=load()||sample();
-if(S.sample&&S.sampleVer!==5)S=sample();
-S.mood=S.mood||{}; S.cond=S.cond||{};
-const MOODS=[['happy','幸せ','good'],['fun','楽しい','good'],['irritated','イライラ','bad'],['lonely','寂しい','bad'],['normal','普通','neutral']];
-const CONDS=[['discharge','おりもの','good'],['poop','うんち','good'],['cramp','腹痛','bad'],['sleepy','眠気','bad'],['headache','頭痛','bad'],['backache','腰痛','bad'],['skin','肌荒れ','bad'],['appetite','食欲','neutral']];
-const moodCat=k=>(MOODS.find(m=>m[0]===k)||[])[2];
-function moodCond(day){
-  const cs=S.cond[day]||[];
-  return '<div class="field"><label>気分（1つ選択）</label><div class="chips">'
-   +MOODS.map(([k,l,g])=>'<button type="button" class="chip '+g+'" data-mood="'+k+'" data-mday="'+day+'" aria-pressed="'+(S.mood[day]===k)+'">'+l+'</button>').join('')+'</div></div>'
-   +'<div class="field"><label>体調（複数選択可）</label><div class="chips">'
-   +CONDS.map(([k,l,g])=>'<button type="button" class="chip '+g+'" data-cond="'+k+'" data-cday="'+day+'" aria-pressed="'+cs.includes(k)+'">'+l+'</button>').join('')+'</div></div>'
-   +'<div class="cat-legend"><span><i style="background:var(--good)"></i>良い</span><span><i style="background:var(--neutral)"></i>普通</span><span><i style="background:var(--bad)"></i>悪い</span></div>';
-}
-let tab='cal', sel=today(), vm=null, armed=false;
-
-function calc(){
-  const t=today(), st=S.settings;
-  const starts=Object.keys(S.period).filter(k=>S.period[k]).sort().filter(d=>!S.period[add(d,-1)]);
-  const cycles=[];
-  for(let i=1;i<starts.length;i++){const c=diff(starts[i],starts[i-1]);if(c>=18&&c<=50)cycles.push(c)}
-  const rec=cycles.slice(-6);
-  const avg=rec.length?Math.round(rec.reduce((a,b)=>a+b,0)/rec.length):st.cycle;
-  const past=starts.filter(d=>d<=t);
-  const last=past[past.length-1]||null;
-  const map={}, recT={};
-  const mark=(nextStart)=>{const ov=add(nextStart,-st.luteal);recT[ov]=recT[add(ov,-2)]=recT[add(ov,-4)]=true;for(let i=-5;i<=1;i++){const d=add(ov,i);if(!map[d])map[d]=(i===0?'ov':'fertile')}if(map[ov]!=='ov')map[ov]='ov';return ov};
-  // past cycles
-  for(let i=0;i<starts.length-1;i++)mark(starts[i+1]);
-  if(!last)return{avg,cycles,last:null,map,starts,rec:recT};
-  let next=add(last,avg);
-  const curOv=mark(next);
-  const late=t>next&&!S.period[t]?diff(t,next):0;
-  // predictions
-  let s=late?add(t,1):next;
-  if(late)s=null;
-  if(s){for(let k=0;k<6;k++){for(let i=0;i<st.period;i++){const d=add(s,i);if(!S.period[d]&&d>t)map[d]='pred'}const e=add(s,avg);mark(e);s=e}}
-  const cycleDay=diff(t,last)+1;
-  const fStart=add(curOv,-5), fEnd=add(curOv,1);
-  const nextOv=t<=fEnd?curOv:add(add(next,avg),-st.luteal);
-  return{avg,cycles,last,map,starts,next,curOv,nextOv,fStart,fEnd,cycleDay,late,rec:recT};
-}
-
-function statusText(c){
-  const t=today();
-  if(!c.last)return{main:'まだ記録がありません',sub:'生理が始まった日を記録すると予測が始まります'};
-  if(c.late>0)return{main:'予定日を'+c.late+'日過ぎています',sub:'次の生理予定日は '+md(c.next)+' でした'};
-  if(S.period[t]){let n=1;while(S.period[add(t,-n)])n++;return{main:'生理 '+n+'日目',sub:'次の妊娠しやすい時期は '+md(c.fStart)+' から'}}
-  if(t>=c.fStart&&t<=c.fEnd){
-    if(t===c.curOv)return{main:'今日は排卵予定日',sub:'妊娠しやすい時期は '+md(c.fEnd)+' まで'};
-    if(t<c.curOv)return{main:'妊娠しやすい時期',sub:'排卵予定日まであと '+diff(c.curOv,t)+'日'};
-    return{main:'妊娠しやすい時期',sub:'排卵予定日の翌日です'};
-  }
-  if(t<c.fStart)return{main:'妊娠しやすい時期まであと '+diff(c.fStart,t)+'日',sub:'排卵予定日は '+md(c.curOv)};
-  return{main:'次の生理まであと '+diff(c.next,t)+'日',sub:'生理予定日は '+md(c.next)};
-}
-
-function ringSVG(c){
-  const t=today(), total=Math.max(c.avg,c.cycleDay), cx=140,cy=140,r=112;
-  const gap=total>40?.6:1.3;
-  const pt=a=>{const rad=a*Math.PI/180;return[(cx+r*Math.cos(rad)).toFixed(2),(cy+r*Math.sin(rad)).toFixed(2)]};
-  let out='';
-  for(let i=1;i<=total;i++){
-    const a0=-90+(i-1)*360/total+gap/2, a1=-90+i*360/total-gap/2;
-    const d=add(c.last,i-1);
-    let cls='seg-normal';
-    if(S.period[d])cls='seg-period';
-    else if(c.map[d]==='ov')cls='seg-ov';
-    else if(c.map[d]==='fertile')cls='seg-fertile';
-    const fut=d>t?' seg-future':'';
-    const [x0,y0]=pt(a0),[x1,y1]=pt(a1);
-    out+='<path class="seg '+cls+fut+'" d="M'+x0+' '+y0+' A'+r+' '+r+' 0 '+(a1-a0>180?1:0)+' 1 '+x1+' '+y1+'"/>';
-  }
-  const am=-90+(c.cycleDay-.5)*360/total;const[mx,my]=pt(am);
-  out+='<circle cx="'+mx+'" cy="'+my+'" r="12" fill="var(--fg)" stroke="var(--surface)" stroke-width="4"/>';
-  const [lx,ly]=pt(-90+gap);
-  return '<svg viewBox="0 0 280 280" role="img" aria-label="周期'+c.cycleDay+'日目、平均周期'+c.avg+'日">'+out+'</svg>';
-}
-
-function bbtChart(c){
-  if(!c.last)return'';
-  const days=Math.max(c.avg,c.cycleDay);
-  const pts=[];
-  for(let i=1;i<=days;i++){const d=add(c.last,i-1);if(S.bbt[d]!=null)pts.push([i,S.bbt[d]])}
-  const W=320,H=140,L=34,R=8,T=10,B=24;
-  const vals=pts.map(p=>p[1]);
-  const lo=Math.min(36.0,...vals.map(v=>Math.floor((v-.1)*10)/10)), hi=Math.max(37.0,...vals.map(v=>Math.ceil((v+.1)*10)/10));
-  const x=i=>L+(i-1)*(W-L-R)/Math.max(days-1,1), y=v=>T+(hi-v)*(H-T-B)/(hi-lo);
-  let g='';
-  const fs=diff(c.fStart,c.last)+1, fe=diff(c.fEnd,c.last)+1;
-  if(fe>=1)g+='<rect x="'+x(Math.max(fs,1)).toFixed(1)+'" y="'+T+'" width="'+(x(fe)-x(Math.max(fs,1))).toFixed(1)+'" height="'+(H-T-B)+'" fill="var(--fert-soft)"/>';
-  for(let v=Math.ceil(lo*2)/2;v<=hi+1e-9;v+=.5){g+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(v).toFixed(1)+'" y2="'+y(v).toFixed(1)+'" stroke="var(--line)" stroke-width="1"/><text x="'+(L-5)+'" y="'+(y(v)+4).toFixed(1)+'" text-anchor="end" font-size="10" fill="var(--muted)">'+v.toFixed(1)+'</text>'}
-  [1,7,14,21,28,35,42].filter(i=>i<=days).forEach(i=>{g+='<text x="'+x(i).toFixed(1)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10" fill="var(--muted)">'+mds(add(c.last,i-1))+'</text>'});
-  const ci=c.cycleDay;g+='<line x1="'+x(ci).toFixed(1)+'" x2="'+x(ci).toFixed(1)+'" y1="'+T+'" y2="'+(H-B)+'" stroke="var(--plum)" stroke-dasharray="3 3"/>';
-  if(pts.length>1)g+='<polyline fill="none" stroke="var(--plum)" stroke-width="2" stroke-linejoin="round" points="'+pts.map(p=>x(p[0]).toFixed(1)+','+y(p[1]).toFixed(1)).join(' ')+'"/>';
-  pts.forEach((p,k)=>{g+='<circle cx="'+x(p[0]).toFixed(1)+'" cy="'+y(p[1]).toFixed(1)+'" r="'+(k===pts.length-1?4:2.5)+'" fill="var(--plum)"/>'});
-  return '<div class="chart"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="今周期の基礎体温">'+g+'</svg></div>';
-}
-
-let editMedId=null, histScroll=null, icsSel=null, formDraft={};
-function clearDraft(p){Object.keys(formDraft).forEach(k=>{if(k.startsWith(p))delete formDraft[k]})}
-function icsDays(c,t){return Object.keys(c.rec).filter(d=>d>=t).sort()}
-function icsLabel(c,d){if(c.map[d]==='ov')return'排卵予定日';if(c.map[add(d,2)]==='ov')return'排卵予定日の2日前';if(c.map[add(d,4)]==='ov')return'排卵予定日の4日前';return'タイミング推奨日'}
-function icsPanel(c,t){
-  const days=icsDays(c,t);
-  if(!days.length)return '<section class="panel"><h2>カレンダーに追加</h2><p class="muted small">追加できるタイミング推奨日がありません。</p></section>';
-  if(!icsSel)icsSel=new Set(days.slice(0,3));
-  const n=days.filter(d=>icsSel.has(d)).length, all=n===days.length;
-  const rows=days.map(d=>'<label class="icsitem"><input type="checkbox" data-icsd="'+d+'"'+(icsSel.has(d)?' checked':'')+'><span class="num">'+mdj(d)+'</span><span class="muted small">'+icsLabel(c,d)+'</span></label>').join('');
-  return '<section class="panel"><div class="section-head"><h2>カレンダーに追加</h2><button type="button" class="linkbtn" data-icsall="1">'+(all?'すべて解除':'すべて選択')+'</button></div>'
-   +'<p class="small muted">追加したい日を選んでください。予定名は「♡」になります。</p><div class="icslist">'+rows+'</div>'
-   +'<button type="button" class="btn primary" data-ics="1"'+(n?'':' disabled')+'>選んだ'+n+'日をカレンダーに追加</button>'
-   +'<p class="note">書き出したファイルを開くと、iPhoneの「カレンダー」に登録できます。</p></section>';
-}
-function medActive(m,day){return (!m.start||day>=m.start)&&(!m.end||day<=m.end)}
-function medState(m,day){
-  if(!medActive(m,day))return{k:'off',txt:'服用期間外'};
-  const log=(S.medLog[day]||{})[m.id];
-  if(log)return{k:'taken',txt:log+' 服用'};
-  if(day<today()||(day===today()&&nowHM()>=m.time))return{k:'missed',txt:'飲み忘れ'};
-  return{k:'wait',txt:'予定'};
-}
-function fmtD(s){const p=parse(s);return p.getFullYear()+'/'+(p.getMonth()+1)+'/'+p.getDate()}
-function medDays(m){return m.days||(m.end&&m.start?diff(m.end,m.start)+1:0)}
-function rangeText(m){const n=medDays(m);return (m.start?fmtD(m.start)+'から':'')+(m.end?(n?n+'日間（'+fmtD(m.end)+'まで）':fmtD(m.end)+'まで'):'無期限')}
-function missedBanner(){
-  const t=today();
-  const missed=S.meds.filter(m=>medState(m,t).k==='missed');
-  if(!missed.length)return'';
-  return '<div class="banner warn"><span>飲み忘れ：'+missed.map(m=>esc(m.name)+'（'+m.time+'）').join('、')+'</span><button type="button" data-go="meds">確認する</button></div>';
-}
-function medRows(){
-  const t=today();
-  if(!S.meds.length)return'<p class="muted small">お薬が登録されていません。「お薬」タブから追加できます。</p>';
-  return S.meds.map(m=>{
-    const s=medState(m,t);
-    if(s.k==='off')return '<div class="med off"><div class="t">'+esc(m.time)+'</div><div><div class="n">'+esc(m.name)+'</div><span class="pill wait">服用期間外</span></div><span></span></div>';
-    return '<div class="med"><div class="t">'+esc(m.time)+'</div><div><div class="n">'+esc(m.name)+' <span class="muted small">'+(m.count||1)+'錠</span></div><span class="pill '+s.k+'">'+s.txt+'</span></div><button type="button" class="check '+(s.k==='taken'?'done':s.k==='missed'?'missed':'')+'" data-med="'+m.id+'" aria-label="'+esc(m.name)+'を'+(s.k==='taken'?'未服用に戻す':'飲んだ')+'">'+(s.k==='taken'?'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>':'<span class="small">飲んだ</span>')+'</button></div>';
-  }).join('');
-}
-function medManageRow(m,i){
-  const last=S.meds.length-1;
-  return '<div class="manage"><div style="min-width:0"><div><span class="num" style="font-weight:700">'+esc(m.time)+'</span>　<span class="n">'+esc(m.name)+'</span></div><div class="muted small">'+(m.count||1)+'錠 ・ '+rangeText(m)+'</div></div>'
-   +'<div class="mbtns"><button type="button" data-mup="'+m.id+'" aria-label="上へ"'+(i===0?' disabled':'')+'>↑</button><button type="button" data-mdown="'+m.id+'" aria-label="下へ"'+(i===last?' disabled':'')+'>↓</button><button type="button" data-medit="'+m.id+'">編集</button><button type="button" class="del" data-del="'+m.id+'">削除</button></div></div>';
-}
-function medEditForm(m){
-  return '<div class="mededit"><div class="formgrid">'
-   +'<div class="field full"><label for="e-name">名前</label><input id="e-name" type="text" maxlength="40" value="'+esc(m.name)+'"></div>'
-   +'<div class="field"><label for="e-time">服用時刻</label><input id="e-time" type="time" value="'+esc(m.time)+'"></div>'
-   +'<div class="field"><label for="e-count">錠数（1回）</label><input id="e-count" type="number" min="1" max="10" inputmode="numeric" value="'+(m.count||1)+'"></div>'
-   +'<div class="field"><label for="e-start">服用開始日</label><input id="e-start" type="date" value="'+(m.start||'')+'"></div>'
-   +'<div class="field"><label for="e-days">服用期間（日数・空欄で無期限）</label><input id="e-days" type="number" min="1" max="365" inputmode="numeric" placeholder="例：14" value="'+(medDays(m)||'')+'"></div>'
-   +'</div><div class="mbtns" style="justify-content:flex-end;margin-top:10px"><button type="button" data-mcancel="1">キャンセル</button><button type="button" class="primary-s" data-msave="'+m.id+'">保存</button></div></div>';
-}
-function readMedForm(p){
-  const name=document.getElementById(p+'name').value.trim();
-  const time=document.getElementById(p+'time').value;
-  const count=Math.round(Number(document.getElementById(p+'count').value));
-  const start=document.getElementById(p+'start').value||'';
-  const dRaw=String(document.getElementById(p+'days').value||'').trim();
-  const days=dRaw?Math.round(Number(dRaw)):0;
-  if(!name||!time){toast('名前と時刻を入力してください');return null}
-  if(!(count>=1&&count<=10)){toast('錠数は1〜10で入力してください');return null}
-  if(dRaw&&!(days>=1&&days<=365)){toast('服用期間は1〜365日で入力してください');return null}
-  const base=start||today();
-  const end=days?add(base,days-1):'';
-  return{name,time,count,start:start||(days?base:undefined),end:end||undefined,days:days||undefined};
-}
-function saveMed(id){
-  const m=S.meds.find(x=>x.id===id);if(!m)return;
-  const v=readMedForm('e-');if(!v)return;
-  Object.assign(m,v);editMedId=null;clearDraft('e-');commit('お薬を保存しました');
-}
-function exportIcs(){
-  const t=today();
-  const c=calc();
-  const days=icsDays(c,t).filter(d=>icsSel&&icsSel.has(d));
-  if(!days.length){toast('追加する日を選んでください');return}
-  const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+Z$/,'Z');
-  const ev=[];
-  days.forEach(d=>{const k=d.replace(/-/g,'');ev.push('BEGIN:VEVENT','UID:rec-'+k+'@marukoyomi','DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+k,'DTEND;VALUE=DATE:'+add(d,1).replace(/-/g,''),'SUMMARY:♡','DESCRIPTION:'+icsLabel(c,d)+'（まるこよみの推定）','END:VEVENT')});
-  const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//marukoyomi//JA','CALSCALE:GREGORIAN'].concat(ev,['END:VCALENDAR']).join('\r\n');
-  const url=URL.createObjectURL(new Blob([ics],{type:'text/calendar;charset=utf-8'}));
-  const a=document.createElement('a');a.href=url;a.download='marukoyomi-timing.ics';document.body.appendChild(a);a.click();a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),4000);
-  toast(days.length+'件の♡を書き出しました');
-}
-
-function weekStrip(c){
-  const t=today();let h='';
-  for(let i=-2;i<=4;i++){
-    const d=add(t,i),p=parse(d);let cls='sd';
-    if(S.period[d])cls+=' period';else if(c.map[d])cls+=' '+c.map[d];
-    if(d===t)cls+=' today';
-    h+='<button type="button" class="'+cls+'" data-goday="'+d+'" aria-label="'+mdj(d)+'"><span class="w">'+(d===t?'今日':WD[p.getDay()])+'</span><span class="n">'+p.getDate()+'</span><span class="m">'+dayIcons(d,c,12)+'</span></button>';
-  }
-  return '<div class="strip">'+h+'</div>';
-}
-
-function viewToday(){
-  const c=calc(), t=today(), st=statusText(c);
-  const missed=S.meds.filter(m=>medState(m,t).k==='missed');
-  let h='';
-  if(missed.length)h+='<div class="banner warn"><span>飲み忘れ：'+missed.map(m=>esc(m.name)+'（'+m.time+'）').join('、')+'</span><button type="button" data-go="meds">確認する</button></div>';
-  h+='<section class="panel hero"><div class="hero-date">'+mdj(t)+'</div>';
-  if(c.last){
-    h+='<div class="ring">'+ringSVG(c)+'<div class="ring-center"><div class="lbl">周期</div><div class="big num">'+c.cycleDay+'</div><div class="unit">日目</div></div></div>';
-  }
-  h+='<div class="status"><div class="main">'+st.main+'</div><div class="sub">'+st.sub+'</div></div>';
-  h+=weekStrip(c);
-  if(c.last)h+='<div class="legend"><span><i class="sw period"></i>生理</span><span><i class="sw fertile"></i>妊娠しやすい時期</span><span>'+ic('egg','egg','ovu',13)+'排卵予定日</span><span>'+ic('heart','line','heart',13)+'タイミング推奨</span></div>';
-  h+='</section>';
-  if(c.last){
-    h+='<div class="facts"><div class="fact"><span class="k">次の生理</span><span class="v num">'+md(c.next)+'</span><span class="d">'+(c.late?c.late+'日経過':'あと'+diff(c.next,t)+'日')+'</span></div>'
-     +'<div class="fact"><span class="k">排卵予定日</span><span class="v num">'+md(c.nextOv)+'</span><span class="d">'+(c.nextOv===t?'今日':c.nextOv>t?'あと'+diff(c.nextOv,t)+'日':md(c.nextOv))+'</span></div>'
-     +'<div class="fact"><span class="k">平均周期</span><span class="v num">'+c.avg+'日</span><span class="d">'+(c.cycles.length?'直近'+Math.min(c.cycles.length,6)+'周期':'初期値')+'</span></div></div>';
-  }
-  // actions
-  const yP=S.period[add(t,-1)], tP=S.period[t];
-  let pBtn;
-  if(tP)pBtn='<button type="button" class="btn on" data-act="period">生理を記録済み（取消）</button>';
-  else if(yP)pBtn='<button type="button" class="btn primary" data-act="period">今日も生理が続いている</button>';
-  else pBtn='<button type="button" class="btn primary" data-act="period">今日 生理が来た</button>';
-  h+='<section class="panel"><div class="section-head"><h2>今日の記録</h2><span class="small muted">'+mdj(t)+'</span></div><div class="actions">'+pBtn
-    +'<button type="button" class="btn '+(S.timing[t]?'on':'')+'" data-act="timing">'+(S.timing[t]?'タイミング記録済み':'タイミングを記録')+'</button></div>';
-  if(c.last&&!c.late){
-    const base=t<=c.curOv?c.curOv:add(add(c.next,c.avg),-S.settings.luteal);
-    const list=[[add(base,-4),'排卵予定日の4日前'],[add(base,-2),'排卵予定日の2日前'],[base,'排卵予定日']];
-    h+='<div class="hint"><strong>'+(c.rec[t]?'今日はタイミング推奨日です':'タイミング推奨日')+'</strong><div class="rec-days">'
-      +list.map(([d,l])=>'<span>'+mdj(d)+'　<span class="muted">'+l+(d===t?'・今日':'')+'</span></span>').join('')+'</div></div>';
-  }
-  h+='<div class="field"><label for="bbtToday">今日の基礎体温（℃）</label><div class="bbt-row"><input id="bbtToday" type="number" inputmode="decimal" step="0.01" min="34" max="42" placeholder="36.50" value="'+(S.bbt[t]!=null?S.bbt[t].toFixed(2):'')+'"><button type="button" class="btn" data-act="bbt" style="flex:none">保存</button></div></div>';
-  h+='</section>';
-  h+='<section class="panel"><h2>今日の気分・体調</h2>'+moodCond(t)+'</section>';
-  h+='<section class="panel"><div class="section-head"><h2>今日のお薬</h2><button type="button" class="btn ghost small" data-go="meds" style="padding:4px 8px;border:0">管理</button></div>'+medRows()+'</section>';
-  if(c.last)h+='<section class="panel"><div class="section-head"><h2>基礎体温</h2><span class="small muted">今周期</span></div>'+bbtChart(c)+'</section>';
-  return h;
-}
-
-function viewCal(){
-  const c=calc(), t=today();
-  if(!vm){const d=parse(t);vm=[d.getFullYear(),d.getMonth()]}
-  const [Y,M]=vm, first=new Date(Y,M,1,12), dim=new Date(Y,M+1,0).getDate();
-  let g='';WD.forEach(w=>g+='<div class="wd">'+w+'</div>');
-  for(let i=0;i<first.getDay();i++)g+='<div class="day out" aria-hidden="true"></div>';
-  for(let dd=1;dd<=dim;dd++){
-    const d=Y+'-'+pad(M+1)+'-'+pad(dd);
-    const w=parse(d).getDay();
-    let cls='day'+(w===0?' sun':w===6?' sat':'');
-    if(d===t)cls+=' today'; if(d===sel)cls+=' sel';
-    const stripe=S.period[d]?'s-period':c.map[d]==='pred'?'s-pred':(c.map[d]==='fertile'||c.map[d]==='ov')?'s-fert':'';
-    let tops='';if(S.mood[d])tops+='<i class="tdot m-'+moodCat(S.mood[d])+'"></i>';if(S.lh[d]==='pos')tops+='<i class="tdot lh"></i>';
-    g+='<button type="button" class="'+cls+'" data-day="'+d+'" aria-label="'+mdj(d)+'"><span class="dn">'+dd+'</span>'+(tops?'<span class="tops">'+tops+'</span>':'')+'<span class="dic">'+dayIcons(d,c,15)+'</span>'+(stripe?'<i class="stripe '+stripe+'"></i>':'')+'</button>';
-  }
-  const tail=(7-(first.getDay()+dim)%7)%7;for(let i=0;i<tail;i++)g+='<div class="day out" aria-hidden="true"></div>';
-  let h='<section class="panel"><div class="cal-head"><button type="button" data-mv="-1" aria-label="前の月">‹</button><h2 class="num">'+Y+'年'+(M+1)+'月</h2><button type="button" data-mv="1" aria-label="次の月">›</button></div><div class="grid7">'+g+'</div>'
-   +iconLegend()+'<div class="legend"><span><i class="sw" style="background:var(--good);border-radius:50%"></i><i class="sw" style="background:var(--neutral);border-radius:50%"></i><i class="sw" style="background:var(--bad);border-radius:50%"></i>気分（右上の点）</span></div></section>';
-  // detail
-  const fut=sel>t;
-  let tag='';
-  if(S.period[sel])tag='生理';else if(c.map[sel]==='ov')tag='排卵予定日';else if(c.map[sel]==='fertile')tag='妊娠しやすい時期';else if(c.map[sel]==='pred')tag='生理予定';
-  h+='<section class="panel"><div class="section-head"><h2>'+mdj(sel)+'</h2><span class="small muted">'+tag+'</span></div>';
-  if(fut){h+='<p class="muted small">未来の日付は記録できません。予測のみ表示しています。</p>'}
-  else{
-    h+='<div class="detail-grid"><button type="button" class="btn '+(S.period[sel]?'on':'')+'" data-dact="period" aria-pressed="'+!!S.period[sel]+'">生理'+(S.period[sel]?'あり':'を記録')+'</button>'
-     +'<button type="button" class="btn '+(S.timing[sel]?'on':'')+'" data-dact="timing" aria-pressed="'+!!S.timing[sel]+'">タイミング'+(S.timing[sel]?'あり':'を記録')+'</button></div>'
-     +'<div class="field"><label>排卵検査薬</label><div class="seg-ctl">'
-     +[['','未使用'],['neg','陰性'],['pos','陽性']].map(([v,l])=>'<button type="button" data-lh="'+v+'" aria-pressed="'+((S.lh[sel]||'')===v)+'">'+l+'</button>').join('')+'</div></div>'
-     +'<div class="field"><label for="bbtSel">基礎体温（℃）</label><div class="bbt-row"><input id="bbtSel" type="number" inputmode="decimal" step="0.01" min="34" max="42" placeholder="36.50" value="'+(S.bbt[sel]!=null?S.bbt[sel].toFixed(2):'')+'"><button type="button" class="btn" data-dact="bbt" style="flex:none">保存</button></div></div>'
-     +moodCond(sel);
-  }
-  h+='</section>';
-  h+=icsPanel(c,t);
-  return h;
-}
-
-const PAST=77, FUT=42, LW=64, MINV=10, MAXV=70;
-let chartScroll=null, CW=8, visDays=40, chartCenter=null;
-const ICP={
-  moon:'M15.2 3.3a8.7 8.7 0 1 0 5.5 14.5A7.1 7.1 0 0 1 15.2 3.3z',
-  star:'M12 3l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.4l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z',
-  heart:'M12 20s-7.6-4.7-7.6-10.1A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.6 2.5C19.6 15.3 12 20 12 20z',
-  egg:'M12 3c3.6 0 6.6 6.1 6.6 10.5A6.6 6.6 0 0 1 5.4 13.5C5.4 9.1 8.4 3 12 3z'
+const APP_VERSION='1.7.0',APP_DATE='2026-11-07';
+addEventListener('error',e=>{const m=document.getElementById('msg');if(m)m.textContent='エラーが起きました（'+(e.message||'不明')+'）。この画面のスクリーンショットを送ってください。'});
+const $=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d'),gc=$('g'),gx=gc.getContext('2d');
+const vc=$('vc'),vcx=vc.getContext('2d'),vg=$('vg'),vgx=vg.getContext('2d');
+const camc=$('camc'),camcx=camc.getContext('2d');
+let camS=null,camOn=false;
+const ios=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const NICE=[.4,.8,1.2,2,4,8],nice=p=>NICE.find(v=>v>=Math.max(p*1.05,.3))||8;
+let cfg={fc:2,thr:.5,snd:true,over:true,margin:0,orb:true,orbDist:500,fx:false,fy:false,v:4};
+const saveCfg=()=>{try{localStorage.setItem('gm-set',JSON.stringify(cfg))}catch(e){}};
+try{const st=JSON.parse(localStorage.getItem('gm-set')||'{}')||{};if(st.v!==4){st.fc=2;st.v=4}Object.assign(cfg,st);saveCfg()}catch(e){}
+const sxv=()=>(ios?1:-1)*(cfg.fx?-1:1),syv=()=>(ios?-1:1)*(cfg.fy?-1:1);
+let raw={x:0,y:0},off={x:0,y:0},sg={x:0,y:0},peak=0,trail=[],sensor=false,S=.4;
+let curM=0,lastT=0,trk=[],env=new Array(72).fill(0),hist=[],N=300,lastS=0,rec=false,log=[],t0=0;
+let gps={sp:null,lat:null,lon:null},wid=null,ac=null,V=null,saved=[];
+let scorer=null,sclT=0,liveS=null,liveEvN=0,logPen=[],logEv=[],recEvN=0;
+let osmCams=[],userCams=[],camState={},orbNear=null,camBusy=false,camTry={},camStat='',needKey='',camCache={};
+try{userCams=JSON.parse(localStorage.getItem('gm-orbis')||'[]')||[]}catch(e){userCams=[]}
+try{camCache=JSON.parse(localStorage.getItem('gm-camc')||'{}')||{}}catch(e){camCache={}}
+let spdLim=null,lastQ=null,limBusy=false,overState=false,lastAlert=0,overCount=0,roads=null,curId=null,near=null,quickBusy=false,lastHdg=null,limFails=0,recent=[],lastVal=null,valBusy=false,roadNoData=false,limStat={t:null,n:0,err:''};
+try{saved=JSON.parse(localStorage.getItem('gm-logs')||'[]')}catch(e){}
+const msg=t=>{$('msg').textContent=t};
+function fit(c,h){const w=c.clientWidth;if(!w)return;const d=devicePixelRatio||1;c.width=Math.round(w*d);c.height=Math.round((h||w)*d);c.getContext('2d').setTransform(d,0,0,d,0,0)}
+function size(){fit(cv);fit(gc,288);fit(vc);fit(vg,288);fit(camc);if(LM)LM.map.invalidateSize();if(VM)VM.map.invalidateSize()}
+let LM=null,VM=null;
+addEventListener('resize',size);size();
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));
+  $('pm').hidden=b.dataset.t!=='m';$('pl').hidden=b.dataset.t!=='l';
+  if(b.dataset.t==='l')liveMap();
+  size();
+});
+// settings
+$('ver').textContent='バージョン '+APP_VERSION+'（'+APP_DATE+'）';
+$('snd').checked=cfg.snd;$('over').checked=cfg.over;cfg.margin=Math.min(50,Math.max(0,+cfg.margin||0));$('mg').value=cfg.margin;$('mgv').textContent=cfg.margin;$('fx').checked=cfg.fx;$('fy').checked=cfg.fy;$('thr').value=String(cfg.thr);$('thrv').textContent=cfg.thr.toFixed(1);$('fc').value=cfg.fc;$('fcv').textContent=cfg.fc;
+$('gear').onclick=()=>{
+  showLimStat();showOrbStat();
+  const d=$('st');d.showModal?d.showModal():d.setAttribute('open','');
+  const h=d.querySelector('h2');h.tabIndex=-1;h.focus({preventScroll:true});
 };
-function ic(n,st,col,sz){sz=sz||14;return '<svg class="ic '+st+' k-'+col+'" width="'+sz+'" height="'+sz+'" viewBox="0 0 24 24" aria-hidden="true"><path d="'+ICP[n]+'"/></svg>'}
-function phaseIcon(d,c,sz){
-  if(S.period[d])return ic('moon','fill','period',sz);
-  if(c.map[d]==='pred')return ic('moon','line','period',sz);
-  if(c.map[d]==='ov')return ic('egg','egg','ovu',sz);
-  if(c.map[d]==='fertile')return ic('star','line','fert',sz);
+$('stx').onclick=()=>{const d=$('st');d.close?d.close():d.removeAttribute('open')};
+$('snd').onchange=e=>{cfg.snd=e.target.checked;saveCfg()};
+$('over').onchange=e=>{cfg.over=e.target.checked;saveCfg()};
+$('mg').oninput=e=>{cfg.margin=+e.target.value;$('mgv').textContent=cfg.margin;saveCfg()};
+cfg.orb=cfg.orb!==false;cfg.orbDist=Math.min(1000,Math.max(200,+cfg.orbDist||500));
+$('orbon').checked=cfg.orb;$('od').value=cfg.orbDist;$('odv').textContent=cfg.orbDist;ocnt();
+$('orbon').onchange=e=>{cfg.orb=e.target.checked;saveCfg();if(!cfg.orb)orbNear=null;drawCams()};
+$('od').oninput=e=>{cfg.orbDist=+e.target.value;$('odv').textContent=cfg.orbDist;saveCfg()};
+$('oimp').onclick=()=>$('oimpf').click();
+$('oimpf').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const c=parseCams((await f.text()).replace(/^﻿/,''));
+  if(!c.length){$('orbst').textContent='オービスの一覧を読み取れませんでした。1行に「緯度,経度,名前」の形式にしてください。';return}
+  userCams=c;try{localStorage.setItem('gm-orbis',JSON.stringify(userCams))}catch(err){}
+  ocnt();drawCams();$('orbst').textContent='オービスの一覧を読み込みました（'+c.length+'件）。';
+};
+$('oclr').onclick=()=>{if(!userCams.length||!confirm('読み込んだオービスの一覧を消しますか？'))return;userCams=[];try{localStorage.removeItem('gm-orbis')}catch(err){}ocnt();drawCams()};
+$('thr').oninput=e=>{cfg.thr=Math.round(+e.target.value*10)/10;$('thrv').textContent=cfg.thr.toFixed(1);saveCfg()};
+$('fx').onchange=e=>{cfg.fx=e.target.checked;saveCfg();calibrate();mirror(true,false)};
+$('fy').onchange=e=>{cfg.fy=e.target.checked;saveCfg();calibrate();mirror(false,true)};
+// 反転したら、すでに描いたGの軌跡（点の尾・最大Gの輪郭・グラフ・記録中のログ）も同じ向きに反転する
+function mirror(mx,my){
+  if(mx){sg.x=-sg.x;trail.forEach(p=>{p.x=-p.x});hist.forEach(p=>{p.x=-p.x});log.forEach(r=>{r[1]=-r[1]})}
+  if(my){sg.y=-sg.y;trail.forEach(p=>{p.y=-p.y});hist.forEach(p=>{p.y=-p.y});log.forEach(r=>{r[2]=-r[2]})}
+  const n=env.length,ne=new Array(n).fill(0);
+  env.forEach((v,i)=>{
+    const a=i/n*2*Math.PI-Math.PI;let x=Math.cos(a),y=Math.sin(a);
+    if(mx)x=-x;if(my)y=-y;
+    const j=((Math.round((Math.atan2(y,x)+Math.PI)/(2*Math.PI)*n))%n+n)%n;
+    if(v>ne[j])ne[j]=v;
+  });
+  env=ne;
+}
+$('fc').oninput=e=>{cfg.fc=+e.target.value;$('fcv').textContent=cfg.fc;saveCfg()};
+// sensor
+function onMotion(e){
+  const a=e.accelerationIncludingGravity;
+  if(!a||a.x==null||a.y==null)return;
+  if(!sensor){sensor=true;msg('センサー動作中。スマホを動かない状態にして「0点合わせ」を押すと基準になります。')}
+  raw.x=a.x/9.81;raw.y=a.y/9.81;
+}
+let running=false,wl=null;
+async function start(){
+  try{
+    ac=ac||new (window.AudioContext||window.webkitAudioContext)();ac.resume();ensureTone();
+    if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){
+      const r=await DeviceMotionEvent.requestPermission();
+      if(r!=='granted'){msg('モーションセンサーの許可が必要です。');return false}
+    }
+    addEventListener('devicemotion',onMotion);
+    try{wl=await navigator.wakeLock.request('screen')}catch(e){}
+    msg('センサーの値を待っています…');
+    setTimeout(()=>{if(running&&!sensor)msg('センサーの値を取得できません。Safariの通常のタブで開いているか、動作と方向の許可を確認してください。')},1600);
+    return true;
+  }catch(e){msg('センサーを開始できませんでした。');return false}
+}
+function setRun(on){running=on;const b=$('start');b.textContent=on?'停止':'開始';b.classList.toggle('p',!on);b.classList.toggle('on',on)}
+function stopAll(){removeEventListener('devicemotion',onMotion);sensor=false;raw={x:0,y:0};try{wl&&wl.release()}catch(e){}wl=null;stopGps();setRun(false);msg('停止しました。')}
+const calibrate=()=>{off={x:sxv()*raw.x,y:syv()*raw.y}};
+$('start').onclick=async()=>{
+  if(running){stopAll();return}
+  setRun(true);
+  if(await start()){startGps();liveS=newScorer();liveEvN=0}else setRun(false);
+};
+$('cal').onclick=()=>{calibrate();msg('現在の姿勢を0に合わせました。')};
+$('rst').onclick=()=>{peak=0;trail=[];env.fill(0)};
+$('clr').onclick=()=>{trk=[];if(LM)clearTrack(LM)};
+$('mfol').onclick=()=>{if(!LM)return;LM.follow=true;const p=trk[trk.length-1];if(p)LM.map.setView([p.la,p.lo],Math.max(LM.map.getZoom(),16))};
+$('mall').onclick=()=>{if(LM)fitAll(LM,trk)};
+// recording and saved logs
+const persist=()=>{try{localStorage.setItem('gm-logs',JSON.stringify(saved));return true}catch(e){return false}};
+function saveLog(sc,vm){
+  const q=(v,d)=>v==null?null:+v.toFixed(d);
+  const rows=log.map(r=>[q(r[0],1),q(r[1],3),q(r[2],3),q(r[3],3),q(r[4],1),q(r[5],6),q(r[6],6)]);
+  const name=new Date().toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  const r=addLog(rows,name,sc,{pj:logPen.slice(0,rows.length),ev:logEv.slice()},vm);
+  msg(r.ok?'ログを保存しました（'+rows.length+'件）'+(r.L.score?'　スコア '+r.L.score.total+'点':'')+'。「ログ」タブから再生できます。':'保存できませんでした（容量がいっぱいです）。古いログを削除してください。');
+}
+function addLog(rows,name,sc,pen,vm){
+  const L={id:Date.now(),name,dur:Math.round(rows[rows.length-1][0]),peak:+rows.reduce((a,r)=>Math.max(a,r[3]),0).toFixed(2),gps:rows.some(r=>r[5]!=null),score:sc||scoreRows(rows),pen:pen||null,rows};
+  if(vm){L.vid=vm.vid;L.voff=vm.voff}
+  saved.unshift(L);
+  if(persist()){renderList();return{L,ok:true}}
+  saved.shift();return{L,ok:false};
+}
+function exportCsv(L){
+  const f=v=>v==null?'':v;
+  const t='秒,左右G,前後G,合成G,km/h,緯度,経度\n'+L.rows.map(r=>r.map(f).join(',')).join('\n');
+  const d=new Date(L.id),p2=n=>String(n).padStart(2,'0');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+t],{type:'text/csv'}));
+  a.download='gmeter-'+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+'-'+p2(d.getHours())+p2(d.getMinutes())+'.csv';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),10000);
+}
+function parseCsv(t){
+  const n=v=>{const x=parseFloat(v);return isFinite(x)?x:null};
+  const rows=[];
+  t.split(/\r?\n/).forEach(l=>{
+    const c=l.trim().split(',');if(c.length<3)return;
+    const tt=n(c[0]),x=n(c[1]),y=n(c[2]);if(tt==null||x==null||y==null)return;
+    const m=n(c[3]);
+    rows.push([tt,x,y,m==null?Math.hypot(x,y):m,n(c[4]),n(c[5]),n(c[6])]);
+  });
+  return rows;
+}
+$('rec').onclick=()=>{
+  const b=$('rec');
+  if(!rec){
+    rec=true;log=[];logPen=[];logEv=[];recEvN=0;t0=performance.now();recDate=new Date();scorer=newScorer();b.textContent='記録停止';b.classList.add('on');
+    pendingVid=null;$('vdl').hidden=true;$('camdl').hidden=true;
+    const vOk=startVid();
+    msg('記録中です（1秒に10回）'+(vOk?'。カメラ映像も録画しています':camOn?'。この環境では録画できないため、Gのログだけ記録します':'')+'。');return;
+  }
+  rec=false;b.textContent='記録開始';b.classList.remove('on');
+  const vp=stopVid(),vo=vp&&vStart!=null?+((vStart-t0)/1000).toFixed(2):0;
+  if(!log.length){msg('記録が空でした。');return}
+  const sc=scorer?scoreResult(scorer):null;
+  if(confirm('記録を保存しますか？\n'+log.length+'件（約'+Math.round(log[log.length-1][0])+'秒）'+(sc?'\nスコア '+sc.total+'点（ジャーク '+sc.jerk+'・丸み '+sc.round+'）':'')+(vp?'\n録画した動画は「ファイル」アプリに保存します':''))){
+    const vname=vp?stampName(recDate)+mrExt:null;
+    saveLog(sc,vp?{vid:vname,voff:vo}:null);
+    if(vp)vp.then(bl=>gotVid(bl,vname));
+  }else msg('記録を破棄しました。');
+};
+function logScore(s){try{if(s.score===undefined)s.score=scoreRows(s.rows)}catch(e){s.score=null}return s.score}
+function renderList(){
+  $('list').innerHTML=saved.length?saved.map(s=>'<li><div><b>'+s.name+'</b><small>'+s.dur+'秒　最大'+s.peak+'G'+(s.gps?'　GPSあり':'')+(s.vid?'　動画あり':'')+(logScore(s)?'　スコア '+s.score.total+'点':'')+'</small></div><div class="btns" style="margin:0"><button data-a="p" data-id="'+s.id+'">再生</button><button data-a="c" data-id="'+s.id+'">CSV</button><button data-a="d" data-id="'+s.id+'">削除</button></div></li>').join(''):'<li><small>保存したログはまだありません。</small></li>';
+}
+$('list').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const L=saved.find(s=>s.id==b.dataset.id);if(!L)return;
+  if(b.dataset.a==='p')openL(L);
+  else if(b.dataset.a==='c')exportCsv(L);
+  else if(confirm('このログを削除しますか？')){saved=saved.filter(s=>s.id!=b.dataset.id);persist();renderList()}
+};
+renderList();
+$('imp').onclick=()=>$('impf').click();
+$('impf').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  try{
+    const rows=parseCsv((await f.text()).replace(/^﻿/,''));
+    if(rows.length<2){msg('CSVから記録を読み取れませんでした。「秒,左右G,前後G,…」の形式のファイルを選んでください。');return}
+    const r=addLog(rows,f.name.replace(/\.[^.]+$/,''));
+    msg(r.ok?'CSVを読み込みました（'+rows.length+'件）。':'容量がいっぱいで保存はできませんが、再生はできます。');
+    openL(r.L);
+  }catch(err){msg('CSVを読み込めませんでした。')}
+};
+// ===== カメラ表示: カメラ映像の上にGボールと数値を重ねる =====
+function limTxt(){return spdLim!=null?spdLim:roadNoData?'?':wid==null?'--':limStat.err?'×':(valBusy||!limStat.t)?'…':'--'}
+async function openCam(){
+  if(camOn)return;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){msg('この画面ではカメラを使えません。Safariの通常のタブで開いてください。');return}
+  $('camw').hidden=false;size();
+  try{
+    camS=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    const v=$('camv');v.srcObject=camS;await v.play().catch(()=>{});
+    camOn=true;
+  }catch(e){
+    closeCam();
+    msg('カメラを開けませんでした（'+(e&&e.name==='NotAllowedError'?'カメラの許可がありません':errText(e))+'）。');
+  }
+}
+function closeCam(){
+  camOn=false;$('camw').hidden=true;
+  if(mr&&mr.state!=='inactive'){mr.stop();msg('カメラを閉じたので録画を止めました。Gのログの記録は続いています。')}
+  mr=null;
+  if(camS){camS.getTracks().forEach(t=>t.stop());camS=null}
+  $('camv').srcObject=null;
+}
+$('cam').onclick=openCam;
+$('camx').onclick=closeCam;
+$('camst').onclick=()=>$('start').onclick();
+document.addEventListener('visibilitychange',()=>{if(document.hidden)closeCam()});
+function drawCam(){
+  const w=camc.clientWidth;if(!w)return;
+  const R=w/2,k=R*.9,c=camcx,ball=css('--ball'),pc=css('--peak'),S2=S||.4;
+  c.clearRect(0,0,w,w);
+  c.strokeStyle='rgba(255,255,255,.85)';c.lineWidth=1.2;
+  for(let i=1;i<=4;i++){c.beginPath();c.arc(R,R,k*i/4,0,7);c.stroke()}
+  c.beginPath();c.moveTo(R,R*.1);c.lineTo(R,w-R*.1);c.moveTo(R*.1,R);c.lineTo(w-R*.1,R);c.stroke();
+  if(peak>.02){
+    c.beginPath();
+    env.forEach((v,i)=>{const a=i/72*2*Math.PI-Math.PI,r=Math.min(v/S2,1)*k,X=R+Math.cos(a)*r,Y=R+Math.sin(a)*r;i?c.lineTo(X,Y):c.moveTo(X,Y)});
+    c.closePath();c.globalAlpha=.25;c.fillStyle=pc;c.fill();c.globalAlpha=1;
+    c.strokeStyle=pc;c.lineWidth=2;c.stroke();
+  }
+  trail.forEach((p,i)=>{c.globalAlpha=i/trail.length*.4;c.fillStyle=ball;c.beginPath();c.arc(R+p.x/S2*k,R+p.y/S2*k,w*.03,0,7);c.fill()});
+  c.globalAlpha=1;
+  let bx=sg.x/S2,by=sg.y/S2,l=Math.hypot(bx,by);if(l>1){bx/=l;by/=l}
+  c.fillStyle=ball;c.beginPath();c.arc(R+bx*k,R+by*k,w*.06,0,7);c.fill();
+  $('camg').textContent=Math.hypot(sg.x,sg.y).toFixed(2);
+  $('camd').textContent='左右 '+sg.x.toFixed(2)+'　前後 '+(-sg.y).toFixed(2)+'　最大 '+peak.toFixed(2);
+  $('cams').textContent=(gps.sp==null?'--':Math.round(gps.sp))+' km/h　制限 '+limTxt();
+  $('camst').textContent=running?'停止':'開始';
+  const rb=$('camrec');rb.textContent=rec?'記録停止':'記録開始';rb.classList.toggle('on',rec);
+  $('camr').textContent=mr&&vStart!=null?'● 録画中 '+fmtT((performance.now()-vStart)/1000):rec?'● 記録中（Gのログのみ）':'';
+  const co=$('camo'),so=!!(orbNear&&cfg.orb);co.hidden=!so;if(so)co.textContent=orbTxt();
+  if(mr)drawRec();
+}
+// ===== 録画: カメラ映像＋Gボール＋数値＋日時を1枚に合成して録画し、「ファイル」アプリに保存 =====
+const recCv=$('camrc'),recCx=recCv.getContext('2d');
+let mr=null,mrP=null,mrExt='.mp4',vStart=null,recDate=null,pendingVid=null;
+const pad2=n=>String(n).padStart(2,'0');
+const stampName=d=>'gmeter-'+d.getFullYear()+pad2(d.getMonth()+1)+pad2(d.getDate())+'-'+pad2(d.getHours())+pad2(d.getMinutes());
+const fmtT=s=>Math.floor(s/60)+':'+pad2(Math.floor(s%60));
+function vidMime(){
+  if(!window.MediaRecorder)return null;
+  for(const m of ['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm']){try{if(MediaRecorder.isTypeSupported(m))return m}catch(e){}}
   return '';
 }
-function heartIcon(d,c,sz){return S.timing[d]?ic('heart','fill','heart',sz):c.rec[d]?ic('heart','line','heart',sz):''}
-function dayIcons(d,c,sz){return phaseIcon(d,c,sz)+heartIcon(d,c,sz)}
-function iconLegend(){
-  return '<div class="legend"><span>'+ic('moon','fill','period',13)+'生理</span><span>'+ic('moon','line','period',13)+'生理予定</span><span>'+ic('star','line','fert',13)+'妊娠しやすい</span><span>'+ic('egg','egg','ovu',13)+'排卵予定</span><span>'+ic('heart','line','heart',13)+'タイミング推奨</span><span>'+ic('heart','fill','heart',13)+'タイミング記録</span></div>';
+function startVid(){
+  if(!camOn||!recCv.captureStream)return false;
+  const mime=vidMime();if(mime===null)return false;
+  const v=$('camv'),vw=v.videoWidth||1280,vh=v.videoHeight||720,s=Math.min(1,1280/Math.max(vw,vh));
+  recCv.width=Math.round(vw*s/2)*2;recCv.height=Math.round(vh*s/2)*2;
+  drawRec();
+  let st;
+  try{
+    st=recCv.captureStream(30);
+    const o={videoBitsPerSecond:2500000};if(mime)o.mimeType=mime;
+    mr=new MediaRecorder(st,o);
+  }catch(e){mr=null;return false}
+  const chunks=[],type=(mr.mimeType||mime||'video/mp4').split(';')[0];
+  mrExt=/webm/.test(type)?'.webm':'.mp4';
+  mr.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
+  mrP=new Promise(res=>{mr.onstop=()=>{st.getTracks().forEach(t=>t.stop());res(chunks.length?new Blob(chunks,{type}):null)}});
+  mr.onstart=()=>{vStart=performance.now()};
+  try{mr.start(1000)}catch(e){mr=null;mrP=null;return false}
+  vStart=performance.now();
+  return true;
 }
-function viewChart(){
-  const c=calc(), t=today(), start=add(t,-PAST), N=PAST+FUT, days=[];
-  const vw=(document.getElementById('view').clientWidth||360)-2;
-  CW=(vw-LW)/visDays;
-  const wide=CW>=16;
-  for(let i=0;i<N;i++)days.push(add(start,i));
-  let h='';
-  const cell=(d,inner,extra)=>{const w=parse(d).getDay();return '<div class="gc'+(c.rec[d]?' hl':(w===0||w===6)?' wk':'')+(d===t?' tcol':'')+(extra||'')+'">'+(inner||'')+'</div>'};
-  const row=(label,fn,lcls)=>{h+='<div class="gl'+(lcls?' '+lcls:'')+'">'+label+'</div>';days.forEach((d,i)=>{h+=cell(d,fn(d,i))})};
-  const group=label=>{h+='<div class="gl gh">'+label+'</div>';days.forEach(d=>{h+=cell(d,'',' ghc')})};
-  const bar=(test,cls)=>(d,i)=>{if(!test(d))return'';const s=i===0||!test(days[i-1]),e=i===N-1||!test(days[i+1]);return '<i class="bar '+cls+(s?' s':'')+(e?' e':'')+'"></i>'};
-  row('',(d,i)=>{const p=parse(d);return (i===0||p.getDate()===1)?'<span class="gm">'+(p.getMonth()+1)+'月</span>':''},'ghead');
-  h+='<div class="gl gdate-l"></div>';
-  days.forEach(d=>{const p=parse(d),w=p.getDay(),n=p.getDate();
-    h+=cell(d,'<button type="button" class="gd'+(w===0?' sun':w===6?' sat':'')+(d===t?' now':'')+'" data-goday="'+d+'" aria-label="'+mdj(d)+'">'+(wide?'<b>'+n+'</b><small>'+WD[w]+'</small>':'<b>'+n+'</b>')+'</button>',' gdc')});
-  group('周期');
-  row('生理',bar(d=>S.period[d],'b-period'));
-  row('生理予定',bar(d=>c.map[d]==='pred','b-pred'));
-  row('妊娠しやすい',bar(d=>!S.period[d]&&(c.map[d]==='fertile'||c.map[d]==='ov'),'b-fert'));
-  row('排卵予定',d=>c.map[d]==='ov'&&!S.period[d]?ic('egg','egg','ovu'):'');
-  group('タイミング');
-  row('推奨',d=>c.rec[d]?ic('heart','line','heart'):'');
-  row('記録',d=>S.timing[d]?ic('heart','fill','heart'):'');
-  group('気分');
-  row('気分',d=>{const m=MOODS.find(x=>x[0]===S.mood[d]);if(!m)return'';return wide?'<span class="gmood '+m[2]+'" title="'+m[1]+'">'+m[1][0]+'</span>':'<i class="gdot c-'+m[2]+'" title="'+m[1]+'"></i>'});
-  group('体調');
-  CONDS.forEach(([k,l,g])=>row('<i class="gk '+g+'"></i>'+l,d=>(S.cond[d]||[]).includes(k)?'<i class="gdot c-'+g+'"></i>':''));
-  group('基礎体温');
-  const W=N*CW,H=170,T=10,B=10;
-  const vals=days.map(d=>S.bbt[d]).filter(v=>v!=null);
-  const lo=Math.min(36.0,...vals.map(v=>Math.floor((v-.1)*4)/4)), hi=Math.max(37.0,...vals.map(v=>Math.ceil((v+.1)*4)/4));
-  const y=v=>T+(hi-v)*(H-T-B)/(hi-lo), x=i=>i*CW+CW/2;
-  const ns=' vector-effect="non-scaling-stroke"';
-  let ax='<svg width="'+LW+'" height="'+H+'" viewBox="0 0 '+LW+' '+H+'" aria-hidden="true"><text x="4" y="10" font-size="9" fill="var(--muted)">℃</text>';
-  let g='';
-  days.forEach((d,i)=>{const w=parse(d).getDay();let f=null;
-    if(S.period[d])f='var(--period-soft)';else if(c.map[d]==='fertile'||c.map[d]==='ov')f='var(--fert-soft)';else if(w===0||w===6)f='var(--wk)';
-    if(f)g+='<rect x="'+(i*CW).toFixed(2)+'" y="0" width="'+(CW+.3).toFixed(2)+'" height="'+H+'" fill="'+f+'"/>';
-    if(w===0||parse(d).getDate()===1)g+='<line x1="'+(i*CW).toFixed(2)+'" x2="'+(i*CW).toFixed(2)+'" y1="0" y2="'+H+'" stroke="var(--line)"'+ns+'/>'});
-  for(let v=Math.ceil(lo*4)/4;v<=hi+1e-9;v+=.25){const yy=y(v).toFixed(1),major=Math.abs(v*2-Math.round(v*2))<1e-6;
-    g+='<line x1="0" x2="'+W.toFixed(1)+'" y1="'+yy+'" y2="'+yy+'" stroke="var(--line)" stroke-dasharray="'+(major?'0':'2 3')+'"'+ns+'/>';
-    if(major)ax+='<text x="'+(LW-5)+'" y="'+(+yy+3.5)+'" text-anchor="end" font-size="10" fill="var(--muted)">'+v.toFixed(2)+'</text>'}
-  ax+='</svg>';
-  g+='<line x1="'+x(PAST).toFixed(1)+'" x2="'+x(PAST).toFixed(1)+'" y1="0" y2="'+H+'" stroke="var(--plum)" stroke-width="1.5" opacity=".8"'+ns+'/>';
-  let seg=[],prev=-9;const segs=[];
-  days.forEach((d,i)=>{if(S.bbt[d]==null)return;if(i-prev>2&&seg.length){segs.push(seg);seg=[]}seg.push([x(i),y(S.bbt[d])]);prev=i});
-  if(seg.length)segs.push(seg);
-  const pr=Math.max(1.6,Math.min(3.5,CW*.32));
-  segs.forEach(s=>{if(s.length>1)g+='<polyline fill="none" stroke="var(--plum)" stroke-width="1.6" stroke-linejoin="round"'+ns+' points="'+s.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')+'"/>';s.forEach(p=>g+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+pr.toFixed(1)+'" fill="var(--plum)"/>')});
-  h+='<div class="gl gbbt-l">'+ax+'</div><div class="gbbt" style="grid-column:span '+N+'"><svg viewBox="0 0 '+W.toFixed(1)+' '+H+'" preserveAspectRatio="none" role="img" aria-label="基礎体温のグラフ">'+g+'</svg></div>';
-  return '<section class="panel gpanel"><div class="section-head"><h2>グラフ</h2><div class="zoom"><button type="button" data-zoom="out" aria-label="表示期間を広げる">−</button><span id="zl" class="num">'+visDays+'日</span><button type="button" data-zoom="in" aria-label="表示期間を狭める">＋</button></div></div>'
-    +'<div class="gscroll" id="gscroll"><div class="gg" id="gg" style="--cw:'+CW.toFixed(3)+'px;grid-template-columns:'+LW+'px repeat('+N+',var(--cw))">'+h+'</div></div></section>'
-    +'<p class="note">2本指でピンチすると表示期間を変えられます（'+MINV+'〜'+MAXV+'日）。ピンクの列はタイミング推奨日、紫の線は今日です。日付をタップするとその日の記録が開きます。</p>';
+function stopVid(){if(mr&&mr.state!=='inactive')mr.stop();mr=null;const p=mrP;mrP=null;return p}
+function drawRec(){
+  const W=recCv.width,H=recCv.height,c=recCx,v=$('camv'),u=Math.min(W,H)/100;
+  try{c.drawImage(v,0,0,W,H)}catch(e){c.fillStyle='#000';c.fillRect(0,0,W,H)}
+  const bs=Math.round(Math.min(W,H)*.42),bx=Math.round(u*3),by=H-bs-Math.round(u*3);
+  c.fillStyle='rgba(0,0,0,.35)';c.beginPath();c.arc(bx+bs/2,by+bs/2,bs/2,0,7);c.fill();
+  if(camc.width)c.drawImage(camc,bx,by,bs,bs);
+  const d=new Date(),f='-apple-system,"Hiragino Sans",system-ui,sans-serif';
+  c.fillStyle='#fff';c.shadowColor='rgba(0,0,0,.9)';c.shadowBlur=u*.8;
+  c.textAlign='right';
+  c.font='700 '+Math.round(u*9)+'px '+f;c.fillText(Math.hypot(sg.x,sg.y).toFixed(2)+' G',W-u*3,u*11);
+  c.font=Math.round(u*3.6)+'px '+f;
+  c.fillText('左右 '+sg.x.toFixed(2)+'　前後 '+(-sg.y).toFixed(2)+'　最大 '+peak.toFixed(2),W-u*3,u*16.5);
+  c.fillText((gps.sp==null?'--':Math.round(gps.sp))+' km/h　制限 '+limTxt(),W-u*3,u*21.5);
+  c.textAlign='left';
+  c.fillText(d.getFullYear()+'/'+pad2(d.getMonth()+1)+'/'+pad2(d.getDate())+' '+pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()),u*3,u*6);
+  c.fillText((recDate?stampName(recDate):'')+'　ログ '+(rec?((performance.now()-t0)/1000).toFixed(1):'--')+'秒',u*3,u*11);
+  if(orbNear&&cfg.orb){c.fillStyle='#ff6b6b';c.font='700 '+Math.round(u*4)+'px '+f;c.fillText(orbTxt(),u*3,u*16.5);c.fillStyle='#fff'}
+  c.shadowBlur=0;
 }
-function chartCenterIdx(gs){return (gs.scrollLeft+(gs.clientWidth-LW)/2)/CW}
-function setVisDays(v,centerIdx){
-  visDays=Math.max(MINV,Math.min(MAXV,Math.round(v)));
-  chartCenter=centerIdx;render();
+function dl(blob,name){
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),60000);
 }
-function bindChart(gs){
-  const gg=document.getElementById('gg');
-  if(chartCenter!=null){gs.scrollLeft=Math.max(0,chartCenter*CW-(gs.clientWidth-LW)/2);chartCenter=null}
-  else gs.scrollLeft=chartScroll!=null?chartScroll:Math.max(0,PAST*CW+CW/2-(gs.clientWidth-LW)/2);
-  chartScroll=gs.scrollLeft;
-  gs.addEventListener('scroll',()=>{chartScroll=gs.scrollLeft},{passive:true});
-  let pz=null, cw=CW;
-  const dist=e=>Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
-  const midX=e=>(e.touches[0].clientX+e.touches[1].clientX)/2-gs.getBoundingClientRect().left;
-  const vw=gs.clientWidth-LW, minCW=vw/MAXV, maxCW=vw/MINV;
-  gs.addEventListener('touchstart',e=>{if(e.touches.length===2){const mx=midX(e);pz={d:dist(e),cw:CW,mx,idx:(gs.scrollLeft+mx-LW)/CW}}},{passive:true});
-  gs.addEventListener('touchmove',e=>{
-    if(!pz||e.touches.length!==2)return;
-    e.preventDefault();
-    cw=Math.max(minCW,Math.min(maxCW,pz.cw*dist(e)/pz.d));
-    gg.style.setProperty('--cw',cw+'px');
-    gs.scrollLeft=pz.idx*cw-(pz.mx-LW);
-    const zl=document.getElementById('zl');if(zl)zl.textContent=Math.round(vw/cw)+'日';
-  },{passive:false});
-  const end=e=>{if(pz&&e.touches.length<2){const ci=(gs.scrollLeft+(gs.clientWidth-LW)/2)/cw;pz=null;CW=cw;setVisDays(vw/cw,ci)}};
-  gs.addEventListener('touchend',end);gs.addEventListener('touchcancel',end);
-  gs.addEventListener('wheel',e=>{if(!e.ctrlKey)return;e.preventDefault();setVisDays(visDays*(e.deltaY>0?1.1:1/1.1),chartCenterIdx(gs))},{passive:false});
-  gs.addEventListener('gesturestart',e=>e.preventDefault());
+async function shareVid(){
+  if(!pendingVid)return;
+  const {blob,name}=pendingVid;
+  try{
+    const f=new File([blob],name,{type:blob.type});
+    if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});return}
+  }catch(e){if(e&&e.name==='AbortError')return}
+  dl(blob,name);
 }
-
-function viewMeds(){
-  const t=today();
-  let h='<section class="panel"><div class="section-head"><h2>今日のお薬</h2><span class="small muted num">'+mds(t)+' '+nowHM()+'</span></div>'+medRows()+'</section>';
-  h+='<p class="hint">飲み忘れは、このページを開いている間だけ知らせます。決まった時刻のプッシュ通知はiPhoneアプリ版で対応できます。</p>';
-  if(S.meds.length){
-    const earliest=S.meds.reduce((a,m)=>m.start&&m.start<a?m.start:a,t);
-    const latestEnd=S.meds.reduce((a,m)=>m.end&&m.end>a?m.end:a,t);
-    const cap=add(t,-365);
-    const startDay=earliest<cap?cap:earliest;
-    const endDay=latestEnd>t?latestEnd:t;
-    const days=[];for(let d=startDay;d<=endDay;d=add(d,1))days.push(d);
-    let tb='<table><thead><tr><th></th>'+days.map(d=>'<th class="'+(d===t?'tcol':'')+'">'+mds(d)+'</th>').join('')+'</tr></thead><tbody>';
-    S.meds.forEach(m=>{tb+='<tr><td>'+esc(m.name)+'</td>'+days.map(d=>{const s=medState(m,d);const mk='<i class="mk '+(s.k==='taken'?'ok':s.k==='missed'?'ng':'')+'"></i>';const inner=s.k==='off'?'<span class="muted">–</span>':d<=t?'<button type="button" class="mkb" data-mlog="'+m.id+'|'+d+'" aria-label="'+esc(m.name)+' '+mdj(d)+' '+s.txt+'">'+mk+'</button>':mk;return '<td class="'+(d===t?'tcol':'')+'">'+inner+'</td>'}).join('')+'</tr>'});
-    tb+='</tbody></table>';
-    const past=days.filter(d=>d<=t);
-    const ok=past.reduce((a,d)=>a+S.meds.filter(m=>medState(m,d).k==='taken').length,0);
-    const total=past.reduce((a,d)=>a+S.meds.filter(m=>medActive(m,d)).length,0);
-    h+='<section class="panel"><div class="section-head"><h2>服用履歴</h2><span class="small muted num">'+fmtD(startDay)+' 〜 '+fmtD(endDay)+'</span></div>'
-     +'<div class="small muted num">今日までの服用 '+ok+' / '+total+'</div><div class="hist" id="hist">'+tb+'</div>'
-     +'<div class="legend" style="justify-content:flex-start"><span><i class="mk ok" style="width:10px;height:10px"></i>服用</span><span><i class="mk ng" style="width:10px;height:10px"></i>飲み忘れ</span><span><i class="mk" style="width:10px;height:10px"></i>予定</span><span class="muted">–　期間外</span></div><p class="note">横にスクロールすると、登録した全期間を見られます。今日までのマスをタップすると、飲んだ・飲んでいないを切り替えられます。</p></section>';
+function gotVid(blob,name){
+  if(!blob){msg('録画データが空でした。動画は保存されていません（Gのログは保存済みです）。');return}
+  pendingVid={blob,name};$('vdl').hidden=false;$('camdl').hidden=false;
+  dl(blob,name);
+  msg('ログと動画「'+name+'」を保存しました。iPhoneでは確認が出たら「ダウンロード」を押すと、「ファイル」アプリの「ダウンロード」フォルダに入ります。保存されていないときは「動画を保存」を押して、共有メニューから「"ファイル"に保存」を選んでください。');
+}
+$('camrec').onclick=()=>$('rec').onclick();
+$('vdl').onclick=shareVid;$('camdl').onclick=shareVid;
+// ===== オービス警告: OpenStreetMapの speed_camera と、自分で読み込んだ一覧 =====
+// 地図データは0.1度（約10km）四方の地域ごとに取得し、7日間キャッシュする（サーバーへの問い合わせを最小限にする）
+const OVP=['https://overpass-api.de/api/interpreter','https://overpass.private.coffee/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+function ocnt(){$('ocnt').textContent=userCams.length?'（'+userCams.length+'件）':'（なし）'}
+function parseCams(t){
+  const out=[];
+  t.split(/\r?\n/).forEach(l=>{
+    const f=l.split(/[,\t]/).map(x=>x.trim()).filter(x=>x!=='');
+    const nums=[],txt=[];
+    f.forEach(x=>{const v=Number(x);if(isFinite(v))nums.push(v);else txt.push(x)});
+    if(nums.length<2)return;
+    let la=nums[0],lo=nums[1];
+    if(Math.abs(la)>90&&Math.abs(lo)<=90){const t2=la;la=lo;lo=t2}
+    if(Math.abs(la)>90||Math.abs(lo)>180||(la===0&&lo===0))return;
+    out.push({la,lo,name:txt.join(' ').slice(0,40)});
+  });
+  return out;
+}
+const camKey=(la,lo)=>Math.floor(la*10)+'_'+Math.floor(lo*10);
+function saveCamCache(){
+  const ks=Object.keys(camCache).sort((a,b)=>camCache[b].t-camCache[a].t);
+  ks.slice(300).forEach(k=>delete camCache[k]);
+  try{localStorage.setItem('gm-camc',JSON.stringify(camCache))}catch(e){}
+}
+async function fetchCamBox(s,w,n,e){
+  const q='[out:json][timeout:20];node["highway"="speed_camera"]('+[s,w,n,e].map(v=>v.toFixed(1)).join(',')+');out;';
+  let last=null;
+  for(const u of OVP){
+    const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),20000);
+    try{
+      const r=await fetch(u,{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:ctl.signal});
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const j=await r.json();
+      return (j.elements||[]).filter(x=>x.lat!=null).map(x=>{const t=x.tags||{};return{la:x.lat,lo:x.lon,name:(t.name||'')+(t.maxspeed?'（制限'+t.maxspeed+'）':'')}});
+    }catch(err){last=err}
+    finally{clearTimeout(tm)}
   }
-  h+='<section class="panel"><div class="section-head"><h2>お薬の登録</h2><span class="small muted">'+S.meds.length+'件</span></div>'
-   +(S.meds.length?S.meds.map((m,i)=>editMedId===m.id?medEditForm(m):medManageRow(m,i)).join(''):'<p class="muted small">まだ登録がありません。</p>')
-   +'<form id="addMed" class="medform"><div class="section-head"><h2>新しく追加</h2></div><div class="formgrid">'
-   +'<div class="field full"><label for="a-name">名前</label><input id="a-name" type="text" maxlength="40" placeholder="例：葉酸サプリ"></div>'
-   +'<div class="field"><label for="a-time">服用時刻</label><input id="a-time" type="time" value="08:00"></div>'
-   +'<div class="field"><label for="a-count">錠数（1回）</label><input id="a-count" type="number" min="1" max="10" inputmode="numeric" value="1"></div>'
-   +'<div class="field"><label for="a-start">服用開始日</label><input id="a-start" type="date" value="'+t+'"></div>'
-   +'<div class="field"><label for="a-days">服用期間（日数・空欄で無期限）</label><input id="a-days" type="number" min="1" max="365" inputmode="numeric" placeholder="例：14"></div>'
-   +'</div><button type="submit" class="btn primary">追加する</button></form>'
-   +'<p class="note">お薬の量や時間は、医師・薬剤師の指示を優先してください。</p></section>';
-  return h;
+  throw last||new Error('取得失敗');
 }
-
-function viewPrefs(){
-  const c=calc(), s=S.settings;
-  return '<section class="panel"><h2>周期の設定</h2>'
-   +'<div class="set-row"><label for="sCycle">周期の初期値（日）<br><span class="small muted">記録が2周期分たまるまで使います</span></label><input id="sCycle" type="number" min="18" max="50" value="'+s.cycle+'"></div>'
-   +'<div class="set-row"><label for="sPeriod">生理の日数（日）<br><span class="small muted">生理予定の表示に使います</span></label><input id="sPeriod" type="number" min="2" max="10" value="'+s.period+'"></div>'
-   +'<div class="set-row"><label for="sLuteal">黄体期（日）<br><span class="small muted">次の生理の何日前を排卵日とするか</span></label><input id="sLuteal" type="number" min="10" max="16" value="'+s.luteal+'"></div>'
-   +'</section>'
-   +'<section class="panel"><div class="section-head"><h2>記録された周期</h2><span class="small muted">平均 '+c.avg+'日</span></div>'
-   +(c.cycles.length?'<div class="cycles">'+c.cycles.slice(-12).map(x=>'<span>'+x+'日</span>').join('')+'</div>':'<p class="muted small">生理開始日が2回以上記録されると表示されます。</p>')
-   +'</section>'
-   +'<section class="panel"><h2>データ</h2><p class="small">記録はこの端末のブラウザの中だけに保存され、外部には送信されません。ブラウザのデータを消すと記録も消えます。</p>'
-   +'<button type="button" class="btn danger '+(armed?'armed':'')+'" data-act="wipe">'+(armed?'もう一度押すとすべて削除します':'すべての記録を削除')+'</button>'
-   +'<button type="button" class="btn ghost" data-act="demo">サンプルデータを表示する</button></section>'
-   +'<p class="note">排卵日や妊娠しやすい時期は、生理周期から計算した推定です。周期が不規則な場合や治療中の場合は、医療機関の指示や検査結果を優先してください。このアプリは医療機器ではありません。</p>';
+function maybeCams(la,lo){
+  if(!cfg.orb)return;
+  const now=Date.now(),need=[];
+  for(const a of [-.03,.03])for(const b of [-.04,.04]){const k=camKey(la+a,lo+b);if(!need.includes(k))need.push(k)}
+  const miss=need.filter(k=>!(camCache[k]&&now-camCache[k].t<7*864e5));
+  setOsmCams(need);
+  if(!miss.length||camBusy)return;
+  const todo=miss.filter(k=>!(camTry[k]&&now-camTry[k]<120000));   // 失敗したら2分は再試行しない
+  if(!todo.length)return;
+  camBusy=true;todo.forEach(k=>camTry[k]=now);
+  const ab=todo.map(k=>k.split('_').map(Number));
+  const s=Math.min(...ab.map(x=>x[0]))/10,w=Math.min(...ab.map(x=>x[1]))/10,n=(Math.max(...ab.map(x=>x[0]))+1)/10,e=(Math.max(...ab.map(x=>x[1]))+1)/10;
+  fetchCamBox(s,w,n,e).then(cs=>{
+    const t=Date.now();todo.forEach(k=>camCache[k]={t,c:[]});
+    cs.forEach(c=>{const k=camKey(c.la,c.lo);if(camCache[k]&&todo.includes(k))camCache[k].c.push(c)});
+    saveCamCache();camStat='ok';
+  }).catch(err=>{camStat='エラー（'+errText(err)+'）'}).finally(()=>{camBusy=false;needKey='';setOsmCams(need);showOrbStat()});
 }
-
-function render(){
-  const t=today();
-  const dn=document.getElementById('dateNow');dn.textContent=mdj(t);dn.hidden=tab==='today';
-  document.getElementById('sampleBanner').hidden=!S.sample;
-  const v=document.getElementById('view');
-  if(tab!=='meds')histScroll=null;
-  v.innerHTML=tab==='today'?viewToday():tab==='cal'?viewCal():tab==='chart'?viewChart():tab==='meds'?viewMeds():viewPrefs();
-  if(tab!=='meds')v.insertAdjacentHTML('afterbegin',missedBanner());
-  Object.keys(formDraft).forEach(id=>{const el=document.getElementById(id);if(el&&'value' in el)el.value=formDraft[id]});
-  const hs=document.getElementById('hist');
-  if(hs){if(histScroll!=null)hs.scrollLeft=histScroll;else{const tc=hs.querySelector('.tcol');if(tc)hs.scrollLeft=Math.max(0,tc.offsetLeft-hs.clientWidth/2)}
-    hs.addEventListener('scroll',()=>{histScroll=hs.scrollLeft},{passive:true})}
-  const gs=document.getElementById('gscroll');
-  if(gs)bindChart(gs);
-  v.style.display='flex';v.style.flexDirection='column';v.style.gap='16px';
-  document.querySelectorAll('.nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===tab?'page':'false'));
+function setOsmCams(need){
+  const key=need.join('|')+':'+need.map(k=>camCache[k]?camCache[k].t:0).join(',');
+  if(key===needKey)return;needKey=key;
+  osmCams=[];need.forEach(k=>{if(camCache[k])osmCams.push(...camCache[k].c)});
+  drawCams();
 }
-let toastT;
-function toast(m){const e=document.getElementById('toast');e.textContent=m;e.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>e.hidden=true,2200)}
-function commit(msg){save();render();if(msg)toast(msg)}
-function setBBT(day,val){
-  if(val===''){delete S.bbt[day];return commit('体温を消去しました')}
-  const n=parseFloat(val);
-  if(!(n>=34&&n<=42))return toast('34〜42の範囲で入力してください');
-  S.bbt[day]=Math.round(n*100)/100;commit('体温を保存しました');
+function checkCams(la,lo){
+  if(!cfg.orb){orbNear=null;return}
+  let nb=null;
+  osmCams.concat(userCams).forEach(c=>{
+    const k=c.la.toFixed(5)+','+c.lo.toFixed(5),d=dist(la,lo,c.la,c.lo),st=camState[k]||(camState[k]={d:1e9,done:false});
+    if(d>cfg.orbDist*1.5)st.done=false;                              // 十分離れたら、次に近づいたときにまた知らせる
+    if(d<=cfg.orbDist&&d<st.d-2&&!st.done){st.done=true;orbAlert()}  // 近づいているときだけ鳴らす
+    st.d=d;
+    if(d<=cfg.orbDist&&(!nb||d<nb.d))nb={d,name:c.name};
+  });
+  orbNear=nb;
 }
-
-document.addEventListener('click',e=>{
-  const b=e.target.closest('button');if(!b)return;
-  const t=today();
-  if(b.dataset.ics!==undefined){exportIcs();return}
-  if(b.dataset.icsall){const days=icsDays(calc(),today());const all=days.every(d=>icsSel&&icsSel.has(d));icsSel=new Set(all?[]:days);render();return}
-  if(b.dataset.tab){tab=b.dataset.tab;chartScroll=null;armed=false;if(tab==='cal')sel=sel||t;render();window.scrollTo(0,0);return}
-  if(b.dataset.go){tab=b.dataset.go;render();window.scrollTo(0,0);return}
-  if(b.id==='clearSample'){S=blank();sel=t;commit('サンプルを消去しました');return}
-  if(b.dataset.med){const id=b.dataset.med;S.medLog[t]=S.medLog[t]||{};if(S.medLog[t][id]){delete S.medLog[t][id];commit('取り消しました')}else{S.medLog[t][id]=nowHM();commit('服用を記録しました')}return}
-  if(b.dataset.mlog){const [id,d]=b.dataset.mlog.split('|');const m=S.meds.find(x=>x.id===id);if(!m)return;S.medLog[d]=S.medLog[d]||{};if(S.medLog[d][id]){delete S.medLog[d][id];commit(mdj(d)+'：未服用にしました')}else{S.medLog[d][id]=d===today()?nowHM():m.time;commit(mdj(d)+'：飲んだに変更しました')}return}
-  if(b.dataset.mup){const i=S.meds.findIndex(m=>m.id===b.dataset.mup);if(i>0){[S.meds[i-1],S.meds[i]]=[S.meds[i],S.meds[i-1]];commit()}return}
-  if(b.dataset.mdown){const i=S.meds.findIndex(m=>m.id===b.dataset.mdown);if(i>=0&&i<S.meds.length-1){[S.meds[i+1],S.meds[i]]=[S.meds[i],S.meds[i+1]];commit()}return}
-  if(b.dataset.medit){editMedId=b.dataset.medit;clearDraft('e-');render();return}
-  if(b.dataset.mcancel!==undefined){editMedId=null;clearDraft('e-');render();return}
-  if(b.dataset.msave){saveMed(b.dataset.msave);return}
-  if(b.dataset.mood){const d=b.dataset.mday;if(S.mood[d]===b.dataset.mood)delete S.mood[d];else S.mood[d]=b.dataset.mood;commit();return}
-  if(b.dataset.cond){const d=b.dataset.cday,k=b.dataset.cond,l=S.cond[d]||[];S.cond[d]=l.includes(k)?l.filter(x=>x!==k):l.concat(k);if(!S.cond[d].length)delete S.cond[d];commit();return}
-  const a=b.dataset.act;
-  if(a==='period'){if(S.period[t]){delete S.period[t];commit('生理の記録を取り消しました')}else{S.period[t]=true;commit('生理を記録しました')}return}
-  if(a==='timing'){if(S.timing[t])delete S.timing[t];else S.timing[t]=true;commit(S.timing[t]?'タイミングを記録しました':'取り消しました');return}
-  if(a==='bbt'){setBBT(t,document.getElementById('bbtToday').value.trim());return}
-  if(a==='wipe'){if(!armed){armed=true;render();return}armed=false;S=blank();commit('すべての記録を削除しました');return}
-  if(a==='demo'){S=sample();commit('サンプルを表示しました');return}
-  if(b.dataset.mv){let[Y,M]=vm;M+=Number(b.dataset.mv);if(M<0){M=11;Y--}if(M>11){M=0;Y++}vm=[Y,M];render();return}
-  if(b.dataset.zoom){const gs=document.getElementById('gscroll');setVisDays(visDays+(b.dataset.zoom==='out'?10:-10),gs?chartCenterIdx(gs):null);return}
-  if(b.dataset.goday){sel=b.dataset.goday;const p=parse(sel);vm=[p.getFullYear(),p.getMonth()];tab='cal';render();window.scrollTo(0,0);return}
-  if(b.dataset.day){sel=b.dataset.day;render();return}
-  const da=b.dataset.dact;
-  if(da==='period'){if(S.period[sel])delete S.period[sel];else S.period[sel]=true;commit();return}
-  if(da==='timing'){if(S.timing[sel])delete S.timing[sel];else S.timing[sel]=true;commit();return}
-  if(da==='bbt'){setBBT(sel,document.getElementById('bbtSel').value.trim());return}
-  if(b.dataset.lh!==undefined){if(b.dataset.lh)S.lh[sel]=b.dataset.lh;else delete S.lh[sel];commit();return}
-  if(b.dataset.del){const id=b.dataset.del;S.meds=S.meds.filter(m=>m.id!==id);Object.values(S.medLog).forEach(l=>delete l[id]);commit('削除しました');return}
+const orbTxt=()=>'オービス注意　あと '+Math.round(orbNear.d/10)*10+' m'+(orbNear.name?'　'+orbNear.name:'');
+function orbAlert(){
+  if(!ac)return;
+  [[0,988],[.28,784],[.56,988],[.84,784]].forEach(([d,f])=>{
+    const t=ac.currentTime+d,o=ac.createOscillator(),g=ac.createGain();
+    o.type='triangle';o.frequency.value=f;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.4,t+.02);g.gain.linearRampToValueAtTime(0,t+.24);
+    o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+.26);
+  });
+}
+function drawCams(){
+  if(typeof LM==='undefined'||!LM||!LM.cams)return;
+  LM.cams.clearLayers();
+  if(!cfg.orb)return;
+  osmCams.concat(userCams).forEach(c=>L.circleMarker([c.la,c.lo],{pane:'mrk',radius:7,color:'#fff',weight:2,fillColor:'#dc2626',fillOpacity:1}).bindTooltip(c.name||'オービス').addTo(LM.cams));
+}
+function showOrbStat(){
+  const el=$('orbst');if(!el)return;
+  if(!cfg.orb){el.textContent='オービス警告はオフです。';return}
+  el.textContent=camStat==='ok'?'地図データのオービス：周辺 '+osmCams.length+'件（読み込んだ一覧 '+userCams.length+'件）'
+    :camStat?'オービスの地図データを取得できませんでした'+camStat.replace('エラー','')+'。2分後に再試行します。読み込んだ一覧は使えます。'
+    :Object.keys(camCache).length?'地図データのオービス：周辺 '+osmCams.length+'件（保存済みのデータ）':'「開始」でGPSが動くと、周辺のオービスの地図データを取得します。';
+}
+// gps
+function stopGps(){if(wid!=null){navigator.geolocation.clearWatch(wid);wid=null}gps={sp:null,lat:null,lon:null};spdLim=null;lastQ=null;overState=false;overCount=0;curId=null;near=null;limFails=0;roadNoData=false;recent=[];lastVal=null;camState={};orbNear=null}
+function startGps(){
+  if(wid!=null)return;
+  if(!navigator.geolocation){msg('この環境ではGPSを使えません。');return}
+  wid=navigator.geolocation.watchPosition(p=>{
+    const c=p.coords;
+    gps={sp:c.speed==null?null:c.speed*3.6,lat:c.latitude,lon:c.longitude};
+    if(c.accuracy<=100){
+      const q={la:c.latitude,lo:c.longitude,m:curM};
+      trk.push(q);curM=0;if(trk.length>20000)trk.shift();
+      if(LM)liveAdd(q,trk[trk.length-2]);
+      pushRecent(c.latitude,c.longitude);
+      queryLimit(c.latitude,c.longitude);
+      maybeCams(c.latitude,c.longitude);checkCams(c.latitude,c.longitude);
+    }
+  },()=>msg('位置情報を取得できません。位置情報の許可を確認してください。'),{enableHighAccuracy:true,maximumAge:0});
+}
+// 制限速度: OpenStreetMapのmaxspeedを、現在地の近くの道路から取得
+function parseLimit(v){
+  const m=/^(\d+)\s*(km\/h|kmh|mph)?$/i.exec(String(v||'').trim());
+  if(!m)return null;
+  let n=+m[1];if(m[2]&&m[2].toLowerCase()==='mph')n=Math.round(n*1.609);
+  return n>0&&n<=200?n:null;
+}
+// 制限速度: Valhalla（OpenStreetMapのデータを使う経路検索サーバー）に直近のGPS軌跡を送り、
+// 走っている道を照合して、その道の制限速度を受け取る
+const VAL='https://valhalla1.openstreetmap.de/trace_attributes';
+const dist=(a,b,c,d)=>Math.hypot((d-b)*111320*Math.cos(a*Math.PI/180),(c-a)*110540);
+async function fetchT(u,opt,ms){
+  const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),ms);
+  try{return await fetch(u,Object.assign({signal:ctl.signal},opt))}finally{clearTimeout(tm)}
+}
+const errText=e=>e&&e.name==='AbortError'?'時間切れ':((e&&e.message)||'通信エラー');
+function pushRecent(la,lo){
+  const p=recent[recent.length-1];
+  if(!p||dist(p.lat,p.lon,la,lo)>=8){recent.push({lat:+la.toFixed(6),lon:+lo.toFixed(6)});if(recent.length>8)recent.shift()}
+}
+async function valTrace(shape){
+  const r=await fetchT(VAL,{method:'POST',body:JSON.stringify({shape,costing:'auto',shape_match:'map_snap'})},8000);
+  if(r.status===400)return {edges:[]};                  // 近くに道が見つからない
+  if(!r.ok)throw new Error('http '+r.status);
+  return r.json();
+}
+function edgeOfLast(j){
+  const es=j.edges||[];if(!es.length)return null;
+  const mp=j.matched_points||[];
+  for(let i=mp.length-1;i>=0;i--)if(mp[i].edge_index!=null&&es[mp[i].edge_index])return es[mp[i].edge_index];
+  return es[es.length-1];
+}
+function queryLimit(la,lo){
+  if(valBusy)return;
+  const now=Date.now();
+  if(lastVal&&now-lastVal.t<(lastVal.fail?15000:3000))return;       // 3秒おき（失敗したら15秒待つ）
+  if(lastVal&&!lastVal.fail&&dist(lastVal.la,lastVal.lo,la,lo)<20)return;  // ほぼ止まっているときは問い合わせない
+  valBusy=true;const q={la,lo,t:now,fail:false};lastVal=q;
+  let shape=recent.slice(-6);
+  if(shape.length<2)shape=[{lat:+(la-0.00002).toFixed(6),lon:+lo.toFixed(6)},{lat:+la.toFixed(6),lon:+lo.toFixed(6)}];
+  valTrace(shape).then(j=>{
+    const e=edgeOfLast(j),v=e&&typeof e.speed_limit==='number'&&e.speed_limit>0&&e.speed_limit<=200?Math.round(e.speed_limit):null;
+    spdLim=v;roadNoData=!!e&&v==null;
+    limFails=0;limStat.t=new Date();limStat.err='';limStat.n++;
+  }).catch(err=>{
+    q.fail=true;limStat.err=errText(err);
+    if(++limFails===3)msg('制限速度のデータを取得できません（'+limStat.err+'）。電波の状態を確認してください。');
+  }).finally(()=>{valBusy=false});
+}
+$('ltest').onclick=async e=>{
+  const b=e.target;b.disabled=true;$('limst').textContent='接続テスト中…（最大8秒）';
+  const t0=performance.now();
+  try{
+    const j=await valTrace([{lat:35.681236,lon:139.767125},{lat:35.681600,lon:139.767400}]);   // 東京駅前
+    const ed=edgeOfLast(j);
+    $('limst').textContent='valhalla1.openstreetmap.de：OK（'+Math.round(performance.now()-t0)+'ms）'+(ed?'　テスト地点の制限：'+(ed.speed_limit>0?ed.speed_limit+'km/h':'未登録'):'');
+  }catch(err){$('limst').textContent='valhalla1.openstreetmap.de：'+errText(err)+'（'+Math.round(performance.now()-t0)+'ms）'}
+  b.disabled=false;
+};
+function showLimStat(){
+  const t=limStat.t,p2=n=>String(n).padStart(2,'0');
+  $('limst').textContent='制限速度のデータ：'+(t?'最後の取得 '+p2(t.getHours())+':'+p2(t.getMinutes())+':'+p2(t.getSeconds())+'（'+limStat.n+'回成功）':'まだ取得していません')+(limStat.err?'　最後のエラー：'+limStat.err:'');
+}
+// 超過時に「ピピっ」。1回の超過につき最大3回、4秒間隔
+function pipi(){
+  if(!ac)return;
+  [0,.18].forEach(d=>{
+    const t=ac.currentTime+d,o=ac.createOscillator(),g=ac.createGain();
+    o.frequency.value=1400;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.35,t+.01);g.gain.linearRampToValueAtTime(0,t+.12);
+    o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+.14);
+  });
+}
+function checkOver(){
+  const sp=gps.sp,over=cfg.over&&sp!=null&&spdLim!=null&&sp>spdLim+cfg.margin;
+  if(!over){overState=false;overCount=0;return}
+  if(!overState)overCount=0;          // 超過が始まったら回数をリセット
+  overState=true;
+  const now=performance.now();
+  if(overCount<3&&now-lastAlert>4000){pipi();lastAlert=now;overCount++}
+}
+// 連続音: Gが大きくなるほど音量が上がる（しきい値から +1G で最大）
+let tone=null;
+function ensureTone(){
+  if(!ac||tone)return;
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.type='sine';o.frequency.value=660;g.gain.value=0;
+  o.connect(g);g.connect(ac.destination);o.start();tone={o,g};
+}
+function setVol(m){
+  if(!tone)return;
+  const v=cfg.snd?Math.min(1,Math.max(0,(m-cfg.thr)/1)):0;
+  tone.g.gain.setTargetAtTime(v*.4,ac.currentTime,.08);
+}
+// drawing
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function envAdd(en,x,y,m){const a=Math.atan2(y,x),b=Math.round((a+Math.PI)/(2*Math.PI)*72);for(let d=-3;d<=3;d++){const i=((b+d)%72+72)%72,v=m*Math.cos(d*Math.PI/12);if(v>en[i])en[i]=v}}
+function drawBall(cvs,c,sc){
+  const w=cvs.clientWidth;if(!w)return;
+  const R=w/2,k=R*.94,S=sc.S,ring=css('--fg'),ball=css('--ball'),pc=css('--peak');
+  c.clearRect(0,0,w,w);
+  c.strokeStyle=ring;c.lineWidth=1.4;c.globalAlpha=.55;
+  for(let i=1;i<=4;i++){c.beginPath();c.arc(R,R,k*i/4,0,7);c.stroke()}
+  c.beginPath();c.moveTo(R,R*.06);c.lineTo(R,w-R*.06);c.moveTo(R*.06,R);c.lineTo(w-R*.06,R);c.stroke();
+  c.globalAlpha=.9;c.fillStyle=ring;c.font='11px system-ui';c.textAlign='left';
+  [.25,.5,.75,1].forEach(g=>c.fillText(+(S*g).toFixed(2)+'G',R+4,R-k*g-3));
+  c.globalAlpha=1;
+  if(sc.peak>.02){
+    c.beginPath();
+    sc.env.forEach((v,i)=>{const a=i/72*2*Math.PI-Math.PI,r=Math.min(v/S,1)*k,X=R+Math.cos(a)*r,Y=R+Math.sin(a)*r;i?c.lineTo(X,Y):c.moveTo(X,Y)});
+    c.closePath();c.globalAlpha=.14;c.fillStyle=pc;c.fill();c.globalAlpha=1;
+    c.strokeStyle=pc;c.lineWidth=2;c.stroke();
+  }
+  sc.trail.forEach((p,i)=>{c.globalAlpha=i/sc.trail.length*.35;c.fillStyle=ball;c.beginPath();c.arc(R+p.x/S*k,R+p.y/S*k,R*.025,0,7);c.fill()});
+  c.globalAlpha=1;
+  let bx=sc.x/S,by=sc.y/S,l=Math.hypot(bx,by);
+  if(l>1){bx/=l;by/=l}
+  c.fillStyle=ball;c.beginPath();c.arc(R+bx*k,R+by*k,R*.07,0,7);c.fill();
+}
+// ログのグラフ: 左右G / 前後G / 車速 / 減点 の4段
+function drawPanels(c,w,pts,full,cur,win){
+  const H=72,n=pts.length,fg=css('--fg'),mut=css('--mut'),ring=css('--ring'),ball=css('--ball'),pc=css('--peak');
+  c.clearRect(0,0,w,H*4);
+  const za=full&&win?win.a:0,zb=full&&win?win.b:Math.max(n-1,1);   // 表示する範囲（拡大中はその一部）
+  const px=i=>full?(i-za)/Math.max(zb-za,1e-6)*w:w-(n-1-i)/(N-1)*w;
+  const i0=full?Math.max(0,Math.floor(za)-1):0,i1=full?Math.min(n-1,Math.ceil(zb)+1):n-1;
+  const niceR=v=>[0.3,0.5,0.8,1.2,2,4].find(r=>r>=v)||4;
+  let ax=0,ay=0,smax=0;
+  pts.forEach(p=>{ax=Math.max(ax,Math.abs(p.x));ay=Math.max(ay,Math.abs(p.y));if(p.sp!=null)smax=Math.max(smax,p.sp)});
+  const rx=niceR(ax*1.1),ry=niceR(ay*1.1),rs=Math.max(40,Math.ceil(smax*1.1/20)*20);
+  const panel=(k,label,draw)=>{
+    const top=k*H;c.save();c.beginPath();c.rect(0,top,w,H);c.clip();
+    if(k<3){c.strokeStyle=ring;c.lineWidth=1;c.beginPath();c.moveTo(0,top+H-.5);c.lineTo(w,top+H-.5);c.stroke()}
+    draw(top);
+    c.fillStyle=mut;c.font='10px system-ui';c.textAlign='left';c.fillText(label,4,top+11);
+    c.restore();
+  };
+  const line=(key,zero,scale)=>{
+    c.strokeStyle=ball;c.lineWidth=1.6;c.beginPath();let on=false;
+    for(let i=i0;i<=i1;i++){const v=pts[i][key];if(v==null){on=false;continue}const Y=zero-v*scale;on?c.lineTo(px(i),Y):c.moveTo(px(i),Y);on=true}
+    c.stroke();
+  };
+  const gPanel=(k,key,label,r)=>panel(k,label+'　±'+r+'G',top=>{
+    const mid=top+H/2+5,sc=(H/2-11)/r;
+    c.strokeStyle=ring;c.lineWidth=1;c.setLineDash([3,3]);c.beginPath();c.moveTo(0,mid);c.lineTo(w,mid);c.stroke();c.setLineDash([]);
+    line(key,mid,sc);
+  });
+  gPanel(0,'x',(full?'':'過去30秒　')+'左右G',rx);
+  gPanel(1,'y','前後G',ry);
+  panel(2,'車速　0〜'+rs+' km/h',top=>line('sp',top+H-4,(H-18)/rs));
+  panel(3,'減点　棒＝ジャーク　▲＝トゲ　■＝＋型',top=>{
+    const base=top+H-4,hh=H-30,bw=Math.max(1.5,full?w/Math.max(zb-za+1,1):w/N);
+    c.fillStyle=pc;c.globalAlpha=.6;
+    for(let i=i0;i<=i1;i++){const p=pts[i];if(p.pj>0)c.fillRect(px(i)-bw/2,base-p.pj*hh,bw,p.pj*hh)}
+    c.globalAlpha=1;
+    pts.forEach((p,i)=>{
+      if(!p.ev||i<i0||i>i1)return;const X=px(i),Y=top+24;
+      if(p.ev==='spike'){c.fillStyle=pc;c.beginPath();c.moveTo(X,Y-6);c.lineTo(X+6,Y+5);c.lineTo(X-6,Y+5);c.closePath();c.fill()}
+      else{c.fillStyle='#8b5cf6';c.fillRect(X-5,Y-5,10,10)}
+    });
+  });
+  if(full&&cur!=null){c.strokeStyle=fg;c.lineWidth=1.5;c.beginPath();c.moveTo(px(cur),0);c.lineTo(px(cur),H*4);c.stroke()}
+}
+const gcol=m=>'hsl('+(220-220*Math.min(m/.6,1))+',100%,36%)';
+function makeMap(el){
+  if(!window.L){el.innerHTML='<div class="mempty">地図を読み込めませんでした。ネットにつながっているか確認して、ページを再読み込みしてください。</div>';return null}
+  const map=L.map(el,{preferCanvas:true,zoomControl:true,attributionControl:true}).setView([35.68,139.76],5);
+  let te=0;
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'})
+    .on('tileerror',()=>{if(++te===3)msg('地図の画像を読み込めません。電波の状態を確認してください。')}).addTo(map);
+  map.createPane('cas').style.zIndex=410;
+  map.createPane('trk').style.zIndex=420;
+  map.createPane('mrk').style.zIndex=430;
+  const M={map,cas:L.layerGroup().addTo(map),grp:L.layerGroup().addTo(map),
+    start:L.circleMarker([0,0],{pane:'mrk',radius:8,color:'#fff',weight:3,fillColor:'#16a34a',fillOpacity:1}),
+    cur:L.circleMarker([0,0],{pane:'mrk',radius:9,color:'#fff',weight:3,fillColor:'#1d4ed8',fillOpacity:1}),
+    follow:true};
+  map.on('dragstart',()=>{M.follow=false});
+  M.cams=L.layerGroup().addTo(map);
+  return M;
+}
+function seg(M,a,b){
+  const ll=[[a.la,a.lo],[b.la,b.lo]];
+  L.polyline(ll,{pane:'cas',color:'#fff',weight:11,opacity:.95,lineCap:'round',lineJoin:'round'}).addTo(M.cas);
+  L.polyline(ll,{pane:'trk',color:gcol(b.m),weight:6,opacity:1,lineCap:'round',lineJoin:'round'}).addTo(M.grp);
+}
+function clearTrack(M){M.cas.clearLayers();M.grp.clearLayers();M.cur.remove();M.start.remove()}
+function fitAll(M,tr){
+  if(!tr.length)return;
+  if(tr.length===1){M.map.setView([tr[0].la,tr[0].lo],16);return}
+  M.map.fitBounds(L.latLngBounds(tr.map(p=>[p.la,p.lo])),{padding:[24,24],maxZoom:17});
+}
+function liveMap(){
+  if(LM||!(LM=makeMap($('mp'))))return;
+  drawCams();
+  for(let i=1;i<trk.length;i++)seg(LM,trk[i-1],trk[i]);
+  if(trk.length){LM.start.setLatLng([trk[0].la,trk[0].lo]).addTo(LM.map);const p=trk[trk.length-1];LM.cur.setLatLng([p.la,p.lo]).addTo(LM.map);fitAll(LM,trk)}
+}
+function liveAdd(q,prev){
+  if(prev)seg(LM,prev,q);else{LM.start.setLatLng([q.la,q.lo]).addTo(LM.map);LM.map.setView([q.la,q.lo],16)}
+  LM.cur.setLatLng([q.la,q.lo]).addTo(LM.map);
+  if(LM.follow&&!$('pl').hidden)LM.map.panTo([q.la,q.lo],{animate:false});
+}
+// viewer
+function openL(L){
+  if(!L||!L.rows.length)return;
+  const rows=L.rows;let mx=0,last=null;const tr=[],cur=[];
+  rows.forEach(r=>{
+    mx=Math.max(mx,r[3]);
+    if(r[5]!=null&&r[6]!=null&&(!last||last.la!==r[5]||last.lo!==r[6])){last={la:r[5],lo:r[6],m:mx};tr.push(last);mx=0}
+    cur.push(last);
+  });
+  const pen=(L.pen&&L.pen.pj&&L.pen.pj.length===rows.length)?L.pen:scoreSeries(rows).pen;
+  const pts=rows.map((r,i)=>({x:r[1],y:r[2],m:r[3],sp:r[4],pj:pen.pj[i]||0,ev:null}));
+  pen.ev.forEach(([i,t])=>{if(pts[i])pts[i].ev=t});
+  vClearVid();
+  V={rows,pts,trk:tr,cur,i:-1,vt:rows[0][0],play:false,sp:+$('vs').value,env:new Array(72).fill(0),peak:0,L,adj:0,vid:false,url:null,z:{a:0,b:rows.length-1}};
+  vgZoomUi();
+  $('vvst').textContent=L.vid?'このログの動画：'+L.vid+'　「動画を選ぶ」→「ファイルを選択」でファイルアプリから選ぶと、同期して再生します。':'「動画を選ぶ」で録画した動画を選ぶと、同期して再生します。';
+  $('vn').textContent=L.name;$('vsc').innerHTML=scoreHtml(L.score||(L.score=scoreRows(L.rows)));$('vk').max=rows.length-1;$('vk').value=0;$('vp').textContent='▶ 再生';
+  $('vw').hidden=false;
+  const has=tr.length>0;$('vmw').hidden=!has;$('vnogps').hidden=has;
+  if(has&&!VM)VM=makeMap($('vm'));
+  size();vseek(0);
+  if(has&&VM){
+    clearTrack(VM);V.mk=null;
+    for(let i=1;i<tr.length;i++)seg(VM,tr[i-1],tr[i]);
+    if(tr.length){VM.start.setLatLng([tr[0].la,tr[0].lo]).addTo(VM.map);fitAll(VM,tr)}
+  }
+}
+$('vall').onclick=()=>{if(V&&VM)fitAll(VM,V.trk)};
+function vseek(i){
+  if(i<V.i){V.env.fill(0);V.peak=0;V.i=-1}
+  for(let j=V.i+1;j<=i;j++){const r=V.rows[j];if(r[3]>V.peak)V.peak=r[3];if(r[3]>.02)envAdd(V.env,r[1],-r[2],r[3])}
+  V.i=i;
+}
+// 動画の同期再生: 動画の時刻 = ログの時刻 − (録画開始のずれ + 手動調整)
+function vClearVid(){
+  const vv=$('vv');vv.pause();vv.removeAttribute('src');try{vv.load()}catch(e){}vv.hidden=true;
+  if(V&&V.url){URL.revokeObjectURL(V.url);V.url=null}
+  if(V)V.vid=false;
+  $('vadjw').hidden=true;$('vadj').value=0;$('vadjv').textContent='0.0';
+}
+const vOff=()=>V?(V.L.voff||0)+V.adj:0;
+function vSync(){
+  if(!V||!V.vid)return;const vv=$('vv');
+  let t=Math.max(0,V.vt-vOff());if(isFinite(vv.duration))t=Math.min(t,vv.duration);
+  try{vv.currentTime=t}catch(e){}
+}
+function vPlayState(){
+  if(!V||!V.vid)return;const vv=$('vv');vSync();
+  if(V.play&&V.sp<=2){vv.playbackRate=V.sp;vv.play().catch(()=>{})}else vv.pause();
+}
+$('vx').onclick=()=>{vClearVid();$('vw').hidden=true;V=null};
+$('vp').onclick=()=>{
+  if(!V)return;
+  if(!V.play&&V.i>=V.rows.length-1){vseek(0);V.vt=V.rows[0][0]}
+  V.play=!V.play;$('vp').textContent=V.play?'⏸ 一時停止':'▶ 再生';
+  vPlayState();
+};
+$('vs').onchange=e=>{if(V){V.sp=+e.target.value;vPlayState()}};
+$('vk').oninput=e=>{if(V){const i=+e.target.value;vseek(i);V.vt=V.rows[i][0];vSync()}};
+// ログのグラフ: 1本指のタップ／横になぞるとカーソル移動、2本指のピンチで時間方向に拡大・縮小（2本指のまま横に動かすと移動）
+const gp=new Map();let gpz=null,gpLock=false;
+const vgX=e=>e.clientX-vg.getBoundingClientRect().left;
+function vgCur(x){
+  if(!V)return;const z=V.z,i=Math.max(0,Math.min(V.rows.length-1,Math.round(z.a+x/vg.clientWidth*(z.b-z.a))));
+  vseek(i);V.vt=V.rows[i][0];$('vk').value=i;vSync();
+}
+function vgSet(a,span){
+  const n=V.rows.length-1;span=Math.min(n,Math.max(Math.min(20,n),span));a=Math.max(0,Math.min(n-span,a));
+  if(V.z.a===a&&V.z.b===a+span)return;V.z={a,b:a+span};vgZoomUi();
+}
+function vgFollow(){const z=V.z,s=z.b-z.a;if(V.i>z.b||V.i<z.a)vgSet(V.i-s*.1,s)}   // 再生中にカーソルが外に出たら表示範囲を送る
+function vgZoomUi(){
+  if(!V)return;const n=V.rows.length-1,z=V.z,full=z.a<=0&&z.b>=n,t=i=>V.rows[Math.round(i)][0];
+  $('vgall').hidden=full;
+  $('vgz').textContent=(full?'':'表示 '+fmtT(t(z.a))+'〜'+fmtT(t(z.b))+'（'+Math.round(t(z.b)-t(z.a))+'秒）　')+'ピンチで拡大・縮小　タップでカーソル移動';
+}
+vg.addEventListener('pointerdown',e=>{
+  if(!V)return;gp.set(e.pointerId,vgX(e));try{vg.setPointerCapture(e.pointerId)}catch(err){}
+  if(gp.size===1){gpLock=false;V.gpPrev={i:V.i,t:performance.now()};vgCur(vgX(e))}
+  else if(gp.size===2){
+    const pv=V.gpPrev;if(pv&&pv.i>=0&&performance.now()-pv.t<400){vseek(pv.i);V.vt=V.rows[pv.i][0];$('vk').value=pv.i;vSync()}   // ピンチの1本目でカーソルが動いた分を戻す
+    const [x1,x2]=[...gp.values()],w=vg.clientWidth,s=V.z.b-V.z.a;
+    gpLock=true;gpz={d:Math.max(20,Math.abs(x1-x2)),s,im:V.z.a+(x1+x2)/2/w*s};
+  }
 });
-document.addEventListener('submit',e=>{
-  if(e.target.id!=='addMed')return;e.preventDefault();
-  const v=readMedForm('a-');if(!v)return;
-  if(!v.start)v.start=today();
-  clearDraft('a-');
-  S.meds.push(Object.assign({id:'m'+Date.now().toString(36)},v));
-  commit('「'+v.name+'」を追加しました');
+vg.addEventListener('pointermove',e=>{
+  if(!V||!gp.has(e.pointerId))return;gp.set(e.pointerId,vgX(e));
+  if(gpz&&gp.size>=2){const [x1,x2]=[...gp.values()],s=gpz.s*gpz.d/Math.max(20,Math.abs(x1-x2));vgSet(gpz.im-(x1+x2)/2/vg.clientWidth*s,s)}
+  else if(gp.size===1&&!gpLock)vgCur(vgX(e));
 });
-const keepDraft=e=>{const el=e.target;if(el&&el.id&&/^[ae]-/.test(el.id))formDraft[el.id]=el.value};
-document.addEventListener('input',keepDraft);
-document.addEventListener('change',e=>{
-  keepDraft(e);
-  if(e.target.dataset&&e.target.dataset.icsd){const d=e.target.dataset.icsd;if(!icsSel)icsSel=new Set();if(e.target.checked)icsSel.add(d);else icsSel.delete(d);render();return}
-
-  const map={sCycle:['cycle',18,50],sPeriod:['period',2,10],sLuteal:['luteal',10,16]};
-  const m=map[e.target.id];if(!m)return;
-  const v=Math.round(Number(e.target.value));
-  if(!(v>=m[1]&&v<=m[2])){toast(m[1]+'〜'+m[2]+'の範囲で入力してください');render();return}
-  S.settings[m[0]]=v;commit('設定を保存しました');
-});
-
-// 開いている間の時刻チェック
-let lastDay=today(), alerted={};
-setInterval(()=>{
-  const t=today(), hm=nowHM();
-  if(t!==lastDay){lastDay=t;alerted={};render();return}
-  S.meds.forEach(m=>{const k=t+m.id;if(!alerted[k]&&hm===m.time&&!(S.medLog[t]||{})[m.id]){alerted[k]=1;toast(m.name+' を飲む時間です');render()}});
-  if(tab==='today'||tab==='meds'){const ae=document.activeElement;if(!ae||ae.tagName!=='INPUT')render()}
-},30000);
-
-window.addEventListener('resize',()=>{if(tab==='chart')render()});
-render();
-})();
+['pointerup','pointercancel','lostpointercapture'].forEach(n=>vg.addEventListener(n,e=>{gp.delete(e.pointerId);if(gp.size<2)gpz=null;if(!gp.size)gpLock=false}));
+vg.addEventListener('wheel',e=>{   // パソコン: ホイール／トラックパッドで拡大・縮小
+  if(!V)return;e.preventDefault();
+  const x=vgX(e),w=vg.clientWidth,s=V.z.b-V.z.a,im=V.z.a+x/w*s,ns=s*Math.exp(e.deltaY*.002);
+  vgSet(im-x/w*ns,ns);
+},{passive:false});
+$('vgall').onclick=()=>{if(V){V.z={a:0,b:V.rows.length-1};vgZoomUi()}};
+$('vadj').oninput=e=>{if(V){V.adj=+e.target.value;$('vadjv').textContent=(V.adj>0?'+':'')+V.adj.toFixed(1);vSync()}};
+$('vvid').onclick=()=>$('vvf').click();
+$('vvf').onchange=e=>{
+  const f=e.target.files[0];e.target.value='';if(!f||!V)return;
+  const vv=$('vv');
+  if(V.url)URL.revokeObjectURL(V.url);
+  V.play=false;$('vp').textContent='▶ 再生';
+  vv.onloadedmetadata=()=>{
+    if(!V)return;
+    const ld=V.rows[V.rows.length-1][0]-(V.L.voff||0),d=vv.duration,notes=[];
+    if(V.L.vid&&f.name!==V.L.vid)notes.push('ファイル名がこのログの動画（'+V.L.vid+'）と違います');
+    if(isFinite(d)&&Math.abs(d-ld)>3)notes.push('動画の長さ（'+Math.round(d)+'秒）がログ（'+Math.round(ld)+'秒）と違います。別の走行の動画かもしれません');
+    $('vvst').textContent=notes.length?'⚠ '+notes.join('。')+'。':'動画を読み込みました：'+f.name+'　▶ 再生で同期して動きます。';
+    vSync();
+  };
+  vv.onerror=()=>{$('vvst').textContent='この動画は再生できませんでした：'+f.name};
+  V.url=URL.createObjectURL(f);vv.src=V.url;vv.hidden=false;V.vid=true;$('vadjw').hidden=false;
+};
+function vframe(dt){
+  const n=V.rows.length;
+  if(V.play){
+    const vv=V.vid?$('vv'):null;
+    if(vv&&V.sp<=2&&!vv.paused&&!vv.seeking&&!vv.ended)V.vt=vv.currentTime+vOff();   // 2×以下は動画の時刻に合わせる
+    else{V.vt+=dt*V.sp;if(vv&&V.sp>2&&performance.now()-(V.vsk||0)>250){V.vsk=performance.now();vSync()}}
+    let i=V.i;
+    while(i<n-1&&V.rows[i+1][0]<=V.vt)i++;
+    if(i!==V.i){vseek(i);$('vk').value=i}
+    if(i>=n-1){V.play=false;$('vp').textContent='▶ 再生';if(vv)vv.pause()}
+  }
+  const r=V.rows[V.i],tm=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
+  vseek(V.i);
+  drawBall(vc,vcx,{x:r[1],y:-r[2],S:nice(V.peak),peak:V.peak,env:V.env,trail:V.rows.slice(Math.max(0,V.i-39),V.i+1).map(q=>({x:q[1],y:-q[2]}))});
+  if(!gpz)vgFollow();
+  if(vg.clientWidth)drawPanels(vgx,vg.clientWidth,V.pts,true,V.i,V.z);
+  const cp=V.cur[V.i];
+  if(VM&&cp&&cp!==V.mk){V.mk=cp;VM.cur.setLatLng([cp.la,cp.lo]).addTo(VM.map);if(V.play&&!VM.map.getBounds().contains([cp.la,cp.lo]))VM.map.panTo([cp.la,cp.lo])}
+  $('vr').textContent=tm(r[0])+' / '+tm(V.rows[n-1][0])+'　'+r[3].toFixed(2)+'G'+(r[4]==null?'':'　'+Math.round(r[4])+'km/h');
+}
+// ===== 採点 =====
+// 1) ジャーク: 約2Hzより速い揺れ（路面・振動・センサーのノイズ）を2段ローパスで取り除き、
+//    残った「運転操作の帯域」のGの変化率だけを評価する
+// 2) 軌跡の丸み: トゲ（Gが出てすぐ戻る、向きの急な反転）と、
+//    ＋型（前後Gと左右Gの切り替えで、いったん中心まで戻る）を減点する
+function newScorer(){return{lx:0,ly:0,lx2:0,ly2:0,px:null,py:null,jx:0,jy:0,prx:null,pry:null,noiseSq:0,noiseT:0,t:0,act:0,pen:0,jmax:0,hist:[],lastS:-1,corners:0,cornerW:0,lastCorner:-9,dom:null,domT:-9,minG:9,trans:0,conn:0,bucketP:0,ev:[]}}
+function takeP(S){const v=S.bucketP;S.bucketP=0;return v}
+function feedScore(S,x,y,dt){
+  if(!(dt>0))return;
+  const a=dt/(1/(2*Math.PI*2)+dt);
+  S.lx+=(x-S.lx)*a;S.ly+=(y-S.ly)*a;S.lx2+=(S.lx-S.lx2)*a;S.ly2+=(S.ly-S.ly2)*a;
+  const rx=x-S.lx2,ry=y-S.ly2;                                   // 取り除いた速い揺れ＝ノイズ
+  if(S.prx!=null){const nj=Math.hypot(rx-S.prx,ry-S.pry)/dt;S.noiseSq+=nj*nj*dt;S.noiseT+=dt}
+  S.prx=rx;S.pry=ry;
+  if(S.px!=null){S.jx+=((S.lx2-S.px)/dt-S.jx)*a;S.jy+=((S.ly2-S.py)/dt-S.jy)*a}
+  S.px=S.lx2;S.py=S.ly2;S.t+=dt;
+  const g=Math.hypot(S.lx2,S.ly2),j=Math.hypot(S.jx,S.jy);
+  if(g>0.1){                                                     // 加減速・旋回している時間だけで評価
+    const pv=Math.min(1,Math.max(0,(j-0.25)/0.95));S.act+=dt;S.pen+=pv*dt;if(pv>S.bucketP)S.bucketP=pv;if(j>S.jmax)S.jmax=j;
+  }
+  if(S.t-S.lastS>=0.05){
+    S.lastS=S.t;S.hist.push({t:S.t,jx:S.jx,jy:S.jy,j,g});
+    while(S.hist.length&&S.t-S.hist[0].t>0.5)S.hist.shift();
+    if(j>0.3&&S.t-S.lastCorner>0.5){                             // 0.15〜0.45秒でジャークの向きが110°以上反転＝トゲ
+      for(const h of S.hist){
+        const age=S.t-h.t;
+        if(age<0.15||age>0.45||h.j<=0.3)continue;
+        if((h.jx*S.jx+h.jy*S.jy)/(h.j*j)<Math.cos(110*Math.PI/180)){
+          S.corners++;S.cornerW+=Math.max(...S.hist.map(q=>q.g));S.lastCorner=S.t;S.ev.push({t:S.t,type:'spike'});break;
+        }
+      }
+    }
+  }
+  if(g>0.15){
+    const ax=Math.abs(S.lx2),ay=Math.abs(S.ly2),cls=ay>ax*1.2?'lon':ax>ay*1.2?'lat':'mix';
+    if(cls==='mix')S.domT=S.t;
+    else{
+      if(S.dom&&cls!==S.dom&&S.t-S.domT<1.5){S.trans++;if(S.minG>=0.08)S.conn++;else S.ev.push({t:S.t,type:'plus'})}
+      S.dom=cls;S.domT=S.t;S.minG=9;
+    }
+  }else S.minG=Math.min(S.minG,g);
+}
+function scoreResult(S){
+  if(!S||S.act<5)return null;
+  const c=v=>Math.max(0,Math.min(100,Math.round(v)));
+  const jerk=c(100-150*S.pen/S.act);
+  const spike=c(100*Math.exp(-0.7*S.cornerW/Math.max(S.act/60,0.5)));
+  const plus=S.trans?c(100*S.conn/S.trans):null;
+  const round=plus==null?spike:Math.round((spike+plus)/2);
+  return{total:Math.round((jerk+round)/2),jerk,round,spike,plus,trans:S.trans,conn:S.conn,corners:S.corners,
+    jmax:+S.jmax.toFixed(2),noise:+Math.sqrt(S.noiseSq/Math.max(S.noiseT,1e-6)).toFixed(2),act:Math.round(S.act)};
+}
+function scoreSeries(rows){
+  const S=newScorer(),pj=[0],ev=[];let k=0;
+  for(let i=1;i<rows.length;i++){
+    feedScore(S,rows[i][1],rows[i][2],rows[i][0]-rows[i-1][0]);
+    pj.push(+takeP(S).toFixed(2));
+    for(;k<S.ev.length;k++)ev.push([i,S.ev[k].type]);
+  }
+  return{res:scoreResult(S),pen:{pj,ev}};
+}
+function scoreRows(rows){return scoreSeries(rows).res}
+function scoreHtml(sc){
+  if(!sc)return '<p class="mcap">加減速や旋回が少ないため、採点できませんでした（合計5秒以上必要です）。</p>';
+  const row=(l,v,sub)=>'<div class="sr"><span>'+l+'</span><b>'+v+'</b><small>'+sub+'</small></div>';
+  return '<div class="sc"><div class="st"><b>'+sc.total+'</b><span>点</span></div>'
+    +row('ジャーク（運転操作）',sc.jerk,'Gの変化のなめらかさ　最大 '+sc.jmax+' G/s')
+    +row('軌跡の丸み',sc.round,'トゲ '+sc.corners+'回'+(sc.trans?'　前後↔左右の切り替え：なめらか '+sc.conn+' / '+sc.trans+' 回':''))
+    +'<p class="mcap">路面や振動などの速い揺れ（約2Hzより速いもの）はノイズとして採点から除外しています（ノイズ量 '+sc.noise+' G/s）。評価した運転操作の時間：'+sc.act+'秒</p></div>';
+}
+// main loop
+function loop(now){
+  let tx=0,ty=0;
+  if(sensor){tx=sxv()*raw.x-off.x;ty=syv()*raw.y-off.y}
+  const dt=Math.min(Math.max((now-lastT)/1000,.001),.1);lastT=now;
+  if(rec&&scorer&&sensor)feedScore(scorer,tx,ty,dt);
+  if(liveS&&sensor)feedScore(liveS,tx,ty,dt);
+  const al=dt/(1/(2*Math.PI*cfg.fc)+dt);
+  sg.x+=(tx-sg.x)*al;sg.y+=(ty-sg.y)*al;
+  const m=Math.hypot(sg.x,sg.y);
+  if(m>peak)peak=m;
+  curM=Math.max(curM,m);
+  S=nice(peak);
+  if(m>.02)envAdd(env,sg.x,sg.y,m);
+  setVol(m);
+  checkOver();
+  trail.push({x:sg.x,y:sg.y});
+  if(trail.length>40)trail.shift();
+  if(now-lastS>=100){
+    lastS=now;
+    let hev=null;if(liveS)for(;liveEvN<liveS.ev.length;liveEvN++)hev=liveS.ev[liveEvN].type;
+    hist.push({x:sg.x,y:-sg.y,m,sp:gps.sp,pj:liveS?takeP(liveS):0,ev:hev});if(hist.length>N)hist.shift();
+    if(rec){
+      log.push([(now-t0)/1000,sg.x,-sg.y,m,gps.sp,gps.lat,gps.lon]);
+      logPen.push(scorer?+takeP(scorer).toFixed(2):0);
+      if(scorer)for(;recEvN<scorer.ev.length;recEvN++)logEv.push([log.length-1,scorer.ev[recEvN].type]);
+    }
+  }
+  if(!$('pm').hidden){
+    $('mag').textContent=m.toFixed(2);
+    $('gx').textContent=sg.x.toFixed(2);
+    $('gy').textContent=(-sg.y).toFixed(2);
+    $('pk').textContent=peak.toFixed(2);
+    $('sp').textContent=gps.sp==null?'--':Math.round(gps.sp);
+    $('lim').textContent=limTxt();
+    $('sp').style.color=overState?css('--peak'):'';
+    const ob=$('orb'),so=!!(orbNear&&cfg.orb);ob.hidden=!so;if(so)ob.textContent=orbTxt();
+    if(now-sclT>500){
+      sclT=now;const el=$('scl');el.hidden=!rec;
+      if(rec){const r=scoreResult(scorer);el.textContent=r?'採点中　ジャーク '+r.jerk+'　丸み '+r.round+'　（暫定 '+r.total+'点）':'採点中（加減速や旋回が少ないため集計中）'}
+    }
+    drawBall(cv,ctx,{x:sg.x,y:sg.y,S,peak,env,trail});
+  }
+  if(!$('pl').hidden){
+    if(gc.clientWidth)drawPanels(gx,gc.clientWidth,hist,false);
+  }
+  if(V&&!$('vw').hidden)vframe(dt);
+  if(camOn)drawCam();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
 </script>
-
 </body>
 </html>
