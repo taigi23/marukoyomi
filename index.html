@@ -378,9 +378,13 @@ function sample(){
 }
 function blank(){return{v:1,sample:false,settings:{cycle:28,period:5,luteal:14},period:{},timing:{},bbt:{},lh:{},meds:[],medLog:{},mood:{},cond:{}}}
 function load(){try{const r=localStorage.getItem(KEY);if(r){const d=JSON.parse(r);if(d&&d.v===1)return d}}catch(e){}return null}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}idbSave(S)}
+function idb(){return new Promise((res,rej)=>{try{const r=indexedDB.open('marukoyomi',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}})}
+function idbSave(v){idb().then(db=>{db.transaction('kv','readwrite').objectStore('kv').put(JSON.stringify(v),'state')}).catch(()=>{})}
+function idbLoad(){return idb().then(db=>new Promise(res=>{const r=db.transaction('kv').objectStore('kv').get('state');r.onsuccess=()=>{try{res(r.result?JSON.parse(r.result):null)}catch(e){res(null)}};r.onerror=()=>res(null)})).catch(()=>null)}
 
-let S=load()||sample();
+const loadedFromLocal=load();
+let S=loadedFromLocal||sample();
 if(S.sample&&S.sampleVer!==5)S=sample();
 S.mood=S.mood||{}; S.cond=S.cond||{};
 const MOODS=[['happy','幸せ','good'],['fun','楽しい','good'],['irritated','イライラ','bad'],['lonely','寂しい','bad'],['normal','普通','neutral']];
@@ -479,7 +483,34 @@ function bbtChart(c){
   return '<div class="chart"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="今周期の基礎体温">'+g+'</svg></div>';
 }
 
-let editMedId=null, histScroll=null, icsSel=null, formDraft={};
+let editMedId=null, histScroll=null, icsSel=null, formDraft={}, pendingRestore=null, persisted=null;
+function normalize(d){['period','timing','bbt','lh','medLog','mood','cond'].forEach(k=>{if(!d[k]||typeof d[k]!=='object')d[k]={}});if(!Array.isArray(d.meds))d.meds=[];d.settings=Object.assign({cycle:28,period:5,luteal:14},d.settings||{});return d}
+function backupName(){return 'marukoyomi-backup-'+today().replace(/-/g,'')+'.json'}
+function markBackup(){S.lastBackup=today();commit('バックアップを保存しました')}
+async function exportBackup(){
+  const data=JSON.stringify(Object.assign({},S,{exportedAt:new Date().toISOString()}));
+  const file=new File([data],backupName(),{type:'application/json'});
+  try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'まるこよみ バックアップ'});markBackup();return}}
+  catch(e){if(e&&e.name==='AbortError')return}
+  const url=URL.createObjectURL(file);const a=document.createElement('a');a.href=url;a.download=backupName();document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);markBackup();
+}
+function backupBanner(){
+  if(S.sample)return'';
+  if(!(Object.keys(S.period).length+Object.keys(S.bbt).length+S.meds.length))return'';
+  const last=S.lastBackup, n=last?diff(today(),last):null;
+  if(last&&n<7)return'';
+  return '<div class="banner"><span>'+(last?'最後のバックアップから'+n+'日経ちました':'まだバックアップがありません')+'</span><button type="button" data-act="backup">保存する</button></div>';
+}
+function backupSection(){
+  let h='<section class="panel"><div class="section-head"><h2>バックアップ</h2><span class="small muted">最終：'+(S.lastBackup?fmtD(S.lastBackup):'まだありません')+'</span></div>'
+   +'<p class="small">記録をファイルに保存しておくと、データが消えても元に戻せます。保存先は「ファイル」アプリのiCloud Driveがおすすめです。</p>'
+   +'<div class="actions"><button type="button" class="btn primary" data-act="backup">バックアップを保存</button><button type="button" class="btn" data-act="restorePick">バックアップから復元</button></div>'
+   +'<input type="file" id="restoreFile" accept="application/json,.json" hidden>';
+  if(pendingRestore)h+='<div class="hint"><strong>この内容で今の記録を置き換えますか？</strong><div>'+pendingRestore.info+'</div><div class="actions" style="margin-top:8px"><button type="button" class="btn danger armed" data-restore="ok">置き換える</button><button type="button" class="btn" data-restore="cancel">やめる</button></div></div>';
+  h+='<p class="note">データ保護：'+(persisted===true?'有効（空き容量が少なくなっても消されにくい設定です）':persisted===false?'このブラウザでは有効にできませんでした':'確認中')+'。記録は2か所（localStorageとIndexedDB）に保存し、片方が消えてももう片方から戻します。ホーム画面に追加したアプリから使うと、7日で消えるルールの対象外になります。</p></section>';
+  return h;
+}
 function clearDraft(p){Object.keys(formDraft).forEach(k=>{if(k.startsWith(p))delete formDraft[k]})}
 function icsDays(c,t){return Object.keys(c.rec).filter(d=>d>=t).sort()}
 function icsLabel(c,d){if(c.map[d]==='ov')return'排卵予定日';if(c.map[add(d,2)]==='ov')return'排卵予定日の2日前';if(c.map[add(d,4)]==='ov')return'排卵予定日の4日前';return'タイミング推奨日'}
@@ -805,6 +836,7 @@ function viewPrefs(){
    +'<section class="panel"><div class="section-head"><h2>記録された周期</h2><span class="small muted">平均 '+c.avg+'日</span></div>'
    +(c.cycles.length?'<div class="cycles">'+c.cycles.slice(-12).map(x=>'<span>'+x+'日</span>').join('')+'</div>':'<p class="muted small">生理開始日が2回以上記録されると表示されます。</p>')
    +'</section>'
+   +backupSection()
    +'<section class="panel"><h2>データ</h2><p class="small">記録はこの端末のブラウザの中だけに保存され、外部には送信されません。ブラウザのデータを消すと記録も消えます。</p>'
    +'<button type="button" class="btn danger '+(armed?'armed':'')+'" data-act="wipe">'+(armed?'もう一度押すとすべて削除します':'すべての記録を削除')+'</button>'
    +'<button type="button" class="btn ghost" data-act="demo">サンプルデータを表示する</button></section>'
@@ -819,6 +851,7 @@ function render(){
   if(tab!=='meds')histScroll=null;
   v.innerHTML=tab==='today'?viewToday():tab==='cal'?viewCal():tab==='chart'?viewChart():tab==='meds'?viewMeds():viewPrefs();
   if(tab!=='meds')v.insertAdjacentHTML('afterbegin',missedBanner());
+  if(tab!=='prefs')v.insertAdjacentHTML('afterbegin',backupBanner());
   Object.keys(formDraft).forEach(id=>{const el=document.getElementById(id);if(el&&'value' in el)el.value=formDraft[id]});
   const hs=document.getElementById('hist');
   if(hs){if(histScroll!=null)hs.scrollLeft=histScroll;else{const tc=hs.querySelector('.tcol');if(tc)hs.scrollLeft=Math.max(0,tc.offsetLeft-hs.clientWidth/2)}
@@ -855,7 +888,10 @@ document.addEventListener('click',e=>{
   if(b.dataset.msave){saveMed(b.dataset.msave);return}
   if(b.dataset.mood){const d=b.dataset.mday;if(S.mood[d]===b.dataset.mood)delete S.mood[d];else S.mood[d]=b.dataset.mood;commit();return}
   if(b.dataset.cond){const d=b.dataset.cday,k=b.dataset.cond,l=S.cond[d]||[];S.cond[d]=l.includes(k)?l.filter(x=>x!==k):l.concat(k);if(!S.cond[d].length)delete S.cond[d];commit();return}
+  if(b.dataset.restore){if(b.dataset.restore==='ok'&&pendingRestore){const d=normalize(pendingRestore.data);delete d.exportedAt;d.sample=false;S=d;editMedId=null;icsSel=null;pendingRestore=null;commit('バックアップから復元しました');return}pendingRestore=null;render();return}
   const a=b.dataset.act;
+  if(a==='backup'){exportBackup();return}
+  if(a==='restorePick'){const f=document.getElementById('restoreFile');if(f&&f.click)f.click();return}
   if(a==='period'){if(S.period[t]){delete S.period[t];commit('生理の記録を取り消しました')}else{S.period[t]=true;commit('生理を記録しました')}return}
   if(a==='timing'){if(S.timing[t])delete S.timing[t];else S.timing[t]=true;commit(S.timing[t]?'タイミングを記録しました':'取り消しました');return}
   if(a==='bbt'){setBBT(t,document.getElementById('bbtToday').value.trim());return}
@@ -884,6 +920,13 @@ const keepDraft=e=>{const el=e.target;if(el&&el.id&&/^[ae]-/.test(el.id))formDra
 document.addEventListener('input',keepDraft);
 document.addEventListener('change',e=>{
   keepDraft(e);
+  if(e.target.id==='restoreFile'){const f=e.target.files&&e.target.files[0];e.target.value='';if(!f)return;
+    f.text().then(txt=>{let d=null;try{d=JSON.parse(txt)}catch(err){}
+      if(!d||d.v!==1||typeof d.period!=='object'){toast('まるこよみのバックアップファイルではありません');return}
+      const n=new Set([].concat(...['period','bbt','mood','cond','timing'].map(k=>Object.keys(d[k]||{})))).size;
+      pendingRestore={data:d,info:(d.exportedAt?fmtD(ymd(new Date(d.exportedAt))):'日付不明')+'のバックアップ・記録'+n+'日分・お薬'+((d.meds||[]).length)+'件'};
+      tab='prefs';render();
+    }).catch(()=>toast('ファイルを読み込めませんでした'));return}
   if(e.target.dataset&&e.target.dataset.icsd){const d=e.target.dataset.icsd;if(!icsSel)icsSel=new Set();if(e.target.checked)icsSel.add(d);else icsSel.delete(d);render();return}
 
   const map={sCycle:['cycle',18,50],sPeriod:['period',2,10],sLuteal:['luteal',10,16]};
@@ -903,6 +946,11 @@ setInterval(()=>{
 },30000);
 
 window.addEventListener('resize',()=>{if(tab==='chart')render()});
+idbLoad().then(d=>{
+  if(!loadedFromLocal&&d&&d.v===1&&!d.sample){S=normalize(d);try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}render();toast('保存されていた記録を復元しました')}
+  else if(loadedFromLocal&&!d){idbSave(S)}
+});
+try{if(navigator.storage&&navigator.storage.persist){navigator.storage.persisted().then(p=>p||navigator.storage.persist()).then(p=>{persisted=!!p;if(tab==='prefs')render()}).catch(()=>{persisted=false})}else{persisted=false}}catch(e){persisted=false}
 render();
 })();
 </script>
